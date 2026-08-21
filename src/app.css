@@ -1,0 +1,102 @@
+/*
+ * Global tokens.
+ *
+ * Surfaces and ink live here; the four *theme* palettes (dinosaurs, money,
+ * space, sweets) live in src/lib/themes.ts because they are data a theme
+ * declares, not global design tokens. A theme applies itself by writing its
+ * palette onto CSS custom properties at the jar's root element.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --surface-1: #fdfcfa;
+  --surface-2: #f4f1ea;
+  --surface-3: #e8e3d8;
+  --text-primary: #1b1a17;
+  --text-secondary: #55514a;
+  --text-muted: #8a857b;
+  --border: rgba(27, 26, 23, 0.12);
+  --shadow: rgba(27, 26, 23, 0.16);
+
+  --danger: #b3261e;
+  --success: #1b7a3d;
+
+  /* Theme palette slots — overwritten per jar by themes.ts. */
+  --theme-bg: var(--surface-2);
+  --theme-accent: #6b5b95;
+  --theme-ink: var(--text-primary);
+  --theme-jar-tint: rgba(255, 255, 255, 0.5);
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --radius: 14px;
+
+  /* Minimum comfortable touch target. Phones are the primary target. */
+  --tap: 48px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface-1: #1b1a17;
+    --surface-2: #24221e;
+    --surface-3: #322f29;
+    --text-primary: #fbf9f5;
+    --text-secondary: #c8c2b6;
+    --text-muted: #8a857b;
+    --border: rgba(251, 249, 245, 0.14);
+    --shadow: rgba(0, 0, 0, 0.5);
+
+    --danger: #f2b8b5;
+    --success: #7ddba0;
+  }
+}
+
+:root[data-theme='dark'] {
+  --surface-1: #1b1a17;
+  --surface-2: #24221e;
+  --surface-3: #322f29;
+  --text-primary: #fbf9f5;
+  --text-secondary: #c8c2b6;
+  --text-muted: #8a857b;
+  --border: rgba(251, 249, 245, 0.14);
+  --shadow: rgba(0, 0, 0, 0.5);
+
+  --danger: #f2b8b5;
+  --success: #7ddba0;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  -webkit-text-size-adjust: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Screen-reader-only. The physics canvas is unreadable to assistive tech, so
+ * every jar renders a parallel hidden list — nothing may be reachable only by
+ * looking at the canvas. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
