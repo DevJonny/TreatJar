@@ -233,9 +233,13 @@ export function clearTokensForThemeChange(
   at: string = nowIso(),
 ): Token[] {
   const live = new Set(liveTokens(tokens, jar.currentRoundId).map((t) => t.id));
+  // Normalised exactly as `removeToken` does it. A whitespace-only reason that
+  // survives to storage renders as a blank line in the history, under an entry
+  // that looks like it should say something.
+  const reason = reasonText && reasonText.trim() ? reasonText.trim() : null;
   return tokens.map((t) =>
     live.has(t.id)
-      ? { ...t, removal: { kind: 'themeChange' as const, reasonText, removedUtc: at }, lastModified: at }
+      ? { ...t, removal: { kind: 'themeChange' as const, reasonText: reason, removedUtc: at }, lastModified: at }
       : t,
   );
 }
