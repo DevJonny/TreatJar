@@ -40,11 +40,19 @@ const DINO_TOKENS: readonly [TokenTypeDef, TokenTypeDef, TokenTypeDef, TokenType
     id: 'trex',
     label: 'T-Rex',
     value: 1,
-    path: 'M4 80 Q24 76 34 62 Q30 46 42 38 Q54 30 68 32 Q70 19 82 19 Q95 21 95 34 L93 43 L80 45 Q78 55 66 59 L58 61 L61 88 L49 88 L46 65 L35 67 L33 88 L21 88 L25 69 Q13 75 4 80 Z',
+    // Upright, deep-chested, jaws open, tail counterbalancing behind. The head
+    // is deliberately oversized: at 40px it is the only part that says "T-Rex"
+    // rather than "some animal".
+    path:
+      'M3 64 Q20 59 32 49 C38 31 50 21 61 22 L65 11 Q69 4 79 6 L95 13 Q100 16 96 21 ' +
+      'L76 22 L94 28 Q98 31 93 34 L74 33 Q65 34 63 42 Q61 50 55 53 L66 57 L61 61 L52 57 ' +
+      'Q48 60 46 63 C55 69 57 79 51 84 L49 89 L67 89 L67 95 L44 95 L42 87 ' +
+      'C36 81 31 73 30 64 L24 62 C25 71 23 79 21 86 L31 86 L31 92 L11 92 ' +
+      'C14 81 16 72 16 62 Q10 64 3 64 Z',
     vertices: [
-      { x: 4, y: 82 }, { x: 24, y: 50 }, { x: 44, y: 34 }, { x: 70, y: 18 },
-      { x: 92, y: 22 }, { x: 95, y: 40 }, { x: 66, y: 62 }, { x: 61, y: 90 },
-      { x: 21, y: 90 },
+      { x: 3, y: 64 }, { x: 72, y: 7 }, { x: 79, y: 6 }, { x: 95, y: 13 },
+      { x: 98, y: 17 }, { x: 96, y: 31 }, { x: 67, y: 95 }, { x: 44, y: 95 },
+      { x: 11, y: 92 },
     ],
     fill: '#2f7d4f',
     scale: 1.15,
@@ -53,10 +61,16 @@ const DINO_TOKENS: readonly [TokenTypeDef, TokenTypeDef, TokenTypeDef, TokenType
     id: 'stego',
     label: 'Stegosaurus',
     value: 1,
-    path: 'M10 70 Q14 52 30 46 L36 34 L44 44 L50 30 L58 44 L66 32 L72 46 Q86 50 88 62 L90 72 L80 72 L78 64 L62 68 L60 76 L50 76 L50 66 L30 64 L26 74 L16 74 Z',
+    // Three big back plates and a two-spike thagomizer. Fewer, larger plates
+    // survive the shrink; five small ones turn into a fuzzy edge.
+    path:
+      'M4 40 L16 53 L22 50 L30 26 L40 46 L45 43 L54 20 L64 43 L68 44 L75 30 L82 47 ' +
+      'Q88 48 93 52 Q100 55 97 63 L87 66 Q80 68 75 64 L74 84 L88 84 L87 63 ' +
+      'Q68 70 54 70 L44 70 L42 86 L27 86 L26 66 L19 62 L2 66 L13 56 Z',
     vertices: [
-      { x: 10, y: 72 }, { x: 20, y: 48 }, { x: 40, y: 32 }, { x: 62, y: 30 },
-      { x: 78, y: 46 }, { x: 90, y: 62 }, { x: 86, y: 76 }, { x: 22, y: 76 },
+      { x: 2, y: 66 }, { x: 4, y: 40 }, { x: 30, y: 26 }, { x: 54, y: 20 },
+      { x: 75, y: 30 }, { x: 96, y: 54 }, { x: 97, y: 63 }, { x: 88, y: 84 },
+      { x: 27, y: 86 },
     ],
     fill: '#2a6f8f',
     scale: 1.0,
@@ -65,10 +79,17 @@ const DINO_TOKENS: readonly [TokenTypeDef, TokenTypeDef, TokenTypeDef, TokenType
     id: 'raptor',
     label: 'Raptor',
     value: 1,
-    path: 'M3 44 Q20 46 32 52 Q38 40 50 36 L64 32 Q66 22 77 22 Q89 22 91 33 L98 37 L90 42 L80 44 Q77 52 66 56 L58 58 L64 80 L54 80 L46 60 L36 62 L40 82 L30 82 L26 58 Q14 52 3 44 Z',
+    // Horizontal spine, long straight tail, small low head — the whole point is
+    // that it must not read as a smaller T-Rex when both are in the same pile.
+    path:
+      'M3 25 Q19 32 33 40 C41 33 51 31 60 34 Q66 26 74 21 Q84 16 92 21 L99 26 Q100 30 95 30 ' +
+      'L83 29 L93 33 Q95 36 90 36 L80 34 Q72 35 70 41 Q68 47 62 50 L72 56 L67 59 L58 53 ' +
+      'Q52 56 45 55 C52 60 52 69 45 74 L40 85 L58 85 L58 91 L35 91 L33 82 ' +
+      'C30 74 29 65 30 56 L22 54 C23 63 21 73 19 82 L29 82 L29 88 L11 88 ' +
+      'C14 77 16 67 16 54 Q9 41 3 25 Z',
     vertices: [
-      { x: 3, y: 44 }, { x: 34, y: 48 }, { x: 62, y: 30 }, { x: 84, y: 21 },
-      { x: 98, y: 37 }, { x: 66, y: 57 }, { x: 64, y: 82 }, { x: 30, y: 84 },
+      { x: 3, y: 25 }, { x: 85, y: 18 }, { x: 99, y: 26 }, { x: 99, y: 29 },
+      { x: 58, y: 91 }, { x: 35, y: 91 }, { x: 11, y: 88 },
     ],
     fill: '#c2701d',
     scale: 0.85,
