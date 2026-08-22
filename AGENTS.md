@@ -53,6 +53,13 @@ floating point, and a jar that can never quite reach its target is a bug a
 child notices before you do. `progress.format` in `themes.ts` is the only place
 a number becomes text.
 
+The corollary is that **`jar.target` is a bare number whose unit lives in the
+theme**, so changing the theme reinterprets it. Validating it does not catch
+this — a 10-treat jar reinterpreted as `£0.10` is a perfectly legal target that
+one 50p coin clears. `retargetForTheme` converts it instead, preserving the
+number of token-adds, and it does so without asking what mode either theme is
+in: count themes price a token at 1, so count → count is the identity.
+
 **2. The merge is per-token, and that is the whole point.** `mergeById` merges
 individual entities, not whole jars. Mum's phone and Dad's phone both add
 tokens on the same evening; whole-jar last-write-wins would silently drop one.
