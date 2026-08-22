@@ -2,6 +2,7 @@
   import JarCanvas from './JarCanvas.svelte';
   import ProgressBar from './ProgressBar.svelte';
   import { theme } from '../lib/themes.ts';
+  import { projectedTokenCount } from '../lib/jar.ts';
   import { sharedPile, sharedProgress, type SharedJar } from '../lib/share.ts';
 
   interface Props { shared: SharedJar; reducedMotion: boolean; onmakeown: () => void; }
@@ -11,6 +12,10 @@
   const pile = $derived(sharedPile(shared));
   const total = $derived(sharedProgress(shared));
   const fraction = $derived(Math.min(1, total / shared.target));
+  // The shared jar's own target, not its token count: the jar is drawn to fit
+  // what it is saving up for, so a snapshot of a nearly empty jar must not
+  // arrive looking full.
+  const capacity = $derived(projectedTokenCount(shared.themeId, shared.target));
   const label = $derived(`${shared.name}'s jar, ${def.progress.format(total)} of ${def.progress.format(shared.target)}`);
   const when = $derived(
     new Date(shared.sharedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
@@ -30,7 +35,7 @@
   />
 
   <div class="stage">
-    <JarCanvas tokens={pile} themeId={shared.themeId} capacity={Math.max(pile.length, 10)} {reducedMotion} {label} />
+    <JarCanvas tokens={pile} themeId={shared.themeId} {capacity} {reducedMotion} {label} />
   </div>
 
   <button onclick={onmakeown} style:background={def.palette.accent}>Make your own jar</button>

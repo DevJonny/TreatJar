@@ -32,13 +32,14 @@ in `localStorage` and, optionally, in a private Google Drive app folder.
 
 ```
 src/lib/*.ts        pure logic — unit tested directly, never through the DOM
+src/lib/jarShape.ts geometry of the glass; physics gets `cavity`, the SVG gets the paths
 src/lib/sync/       Google Drive: auth, file access, merge, orchestration
 src/components/     dumb and presentational
 src/App.svelte      routing and wiring
 src/lib/store.svelte.ts   the single source of truth
 ```
 
-### Seven things that will bite you
+### Nine things that will bite you
 
 **1. Progress is one calculation, not two.** Dinosaur/space/sweets jars count
 tokens; money jars count pence. There is no branch for this. Every token type
@@ -74,26 +75,34 @@ tokens outside the glass on a different-sized screen. On load the world is
 settled *headlessly* and then drawn once, so the jar appears already full
 instead of raining tokens down the screen on every open.
 
-**5. The anti-launch lid must sit above the spawn scatter.** Tokens are
-scattered up to `tokenSize * SCATTER` above the jar on first settle, and there
-is a static lid above that to stop a lively collision throwing one off-screen
-forever. If the lid is ever placed *below* the top of the scatter band, tokens
-land on top of it and never enter the jar — and nothing in the UI shows it,
-because the count and the progress bar are both still correct. Only the pile is
-short. `tests/physics.test.ts` asserts every token settles inside the visible
-box for exactly this reason; keep those bounds tight.
-
-Consequently `computeTokenSize()` must run **before** `buildWalls()`, since the
-lid's height derives from token size.
+**5. Nothing may come to rest where it cannot be seen.** This is the failure
+mode this file exists to warn you about, because the UI never shows it: the
+count is right, the progress bar is right, and only the pile is short.
 
 A token enters the world one of two ways, and they are not interchangeable.
-The **scatter** (`SCATTER`) is for tokens restored from storage: spread across
-the full width and over a tall band so that one headless settle produces a pile
-rather than a tower. The **drop** (`DROP_*`) is for a token a grown-up just
-added: released over the mouth, barely tilted, from rest. `DROP_HEIGHT` is
-deliberately just above the rim — everything above the glass is clipped, so
-spawning higher does not lengthen the fall, it only means the token is already
-moving fast by the time anyone can see it.
+The **layout** (`LAYOUT_*`) is for tokens restored from storage: a loose grid
+filling the glass from the floor up, which the settle collapses into a heap.
+The **drop** (`DROP_*`) is for a token a grown-up just added: released over the
+mouth, barely tilted, from rest. `DROP_HEIGHT` is deliberately just above the
+rim — everything above the glass is clipped, so spawning higher does not
+lengthen the fall, it only means the token is already moving fast by the time
+anyone can see it.
+
+Two rules keep both of them inside the glass:
+
+- The **anti-launch lid** must sit above everything the world spawns —
+  `lidHeight()` derives from `layoutReach()` for exactly this reason. A lid
+  below a spawn point is worse than no lid at all: tokens land on top of it and
+  never enter the jar.
+- The starting grid must be **denser than it looks like it should be**
+  (`LAYOUT_Y` is well under 1). Tokens interlock once settled, so a grid of
+  non-overlapping boxes covers several times the area of the finished pile —
+  space them a whole token apart and you build a column taller than the jar,
+  which arches, jams, and strands tokens above the glass.
+
+Consequently `computeTokenSize()` must run **before** `buildWalls()`, since the
+lid's height derives from token size. `tests/physics.test.ts` asserts every
+token settles inside the visible box; keep those bounds tight.
 
 **6. The render loop stops when every body is asleep, and must keep doing so.**
 `enableSleeping` is on and the rAF loop exits at `isAtRest()`. A settled jar
@@ -105,6 +114,44 @@ are delivered as part of the rendering steps — the same pipeline as
 `requestAnimationFrame`. Anything that suppresses those leaves the canvas at
 its 300x150 default with nothing ever drawn in it. `JarCanvas` measures once
 synchronously on mount and *then* observes.
+
+Two more ways the same nothing-is-drawn bug gets in, both of which have already
+happened here:
+
+- **`height: 100%` on the jar.** Its parent is a flex item whose own height is
+  still being resolved, so the percentage computes to `auto`; the element is
+  only filled once measured, so `auto` means zero for ever. It stretches — it
+  does not claim a percentage.
+- **Wrapping the canvas in `{#if measured}`.** `bind:this` is applied by an
+  effect created when that block renders, which lands *after* the effect that
+  wants to size the canvas. The markup is rendered unconditionally.
+
+**8. A jar at its target must look full.** That is the reward: a child who can
+see the pile is near the top does not have to read the progress bar. Token size
+is therefore derived from the target — ten treats are drawn big, a hundred
+small — by `tokenSizeFor`, working forwards from the pile: `capacity` tokens,
+each covering `footprint` of its own square, must add up to `FILL_AT_TARGET` of
+the glass. `footprint` comes from the theme's own hulls, so coins and
+stegosauruses fill to the same height.
+
+Two corrections stop that estimate lying:
+
+- `packedFootprint` — big tokens bridge rather than nest, standing the pile
+  taller than its area says. Without it a ten-token jar overflows.
+- `fitCavity` — past a point no token size can fill a full-height jar, so the
+  **jar gets shorter instead** and stands on the bottom of the space it has.
+  A five-treat jar is a small jar, and it fills up.
+
+These constants are calibrated against measured pile heights, not derived.
+If you change one, re-measure: `tests/physics.test.ts` settles real piles and
+asserts they reach the top and never spill.
+
+**9. The glass and the walls are the same jar.** `jarShape` owns the silhouette;
+`cavity` is the only part tokens occupy and is what the world is built from.
+The neck and shoulders are drawn *above* the pile, never around it — piling
+into a curve needs walls that follow it, and see rule 5. The canvas covers the
+whole jar and is clipped to `inside`, so a token at the brim shows through the
+shoulders instead of being sliced off at the cavity's edge.
 
 ## Accessibility is a hard rule
 
@@ -150,6 +197,13 @@ the DOM, not by reading code.
 - **Do not read a prop right after calling its update callback.** Props have
   not flowed back down yet. `JarView` derives its announcement rather than
   capturing it at the call site, which is why the count is not off by one.
+
+- **An effect that reads the token list will run when a treat is added.**
+  `JarCanvas` has two effects: one that builds and re-fits the world, and one
+  that reconciles tokens. The first reads the list `untrack`ed on purpose. Let
+  it track, and adding a treat re-settles the whole pile headlessly before the
+  second effect can start the fall — the drop, the only animation this app has,
+  silently stops happening while everything still looks correct.
 
 ## Adding a theme
 

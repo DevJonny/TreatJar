@@ -63,17 +63,39 @@ interface PreparedType {
   hull: Vec2[];
   /** Centroid of that hull — the offset between body origin and path origin. */
   centre: Vec2;
+  /**
+   * Area the token actually occupies, as a fraction of the `tokenSize` square
+   * it is drawn in. A coin fills most of its box; a stegosaurus, with its
+   * spikes and the air between its legs, fills about a third of it.
+   */
+  footprint: number;
+}
+
+/** Shoelace area of a simple polygon. */
+function polygonArea(points: readonly Vec2[]): number {
+  let sum = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!;
+    const b = points[(i + 1) % points.length]!;
+    sum += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(sum) / 2;
 }
 
 const WALL = 80;
 const FIXED_DELTA = 1000 / 60;
-const SETTLE_STEPS = 220;
+const SETTLE_STEPS = 320;
 /**
- * How far above the jar the initial scatter reaches, in token widths. Tokens
- * are spread over a band rather than stacked on one spot so the first settle
- * produces a pile instead of a tower.
+ * Cell size of the initial layout, in token widths.
+ *
+ * Rows are deliberately closer together than a token is tall. A grid of
+ * non-overlapping boxes always covers far more area than the same tokens do
+ * once they have settled and interlocked, so spacing them a whole token apart
+ * builds a column several times taller than the jar. Starting them slightly
+ * overlapped costs one shove during the settle and keeps the pile in the jar.
  */
-const SCATTER = 6;
+const LAYOUT_X = 0.95;
+const LAYOUT_Y = 0.7;
 /**
  * A token added by hand is *dropped in through the mouth*, and the three
  * constants below are what make it read that way rather than as a token
@@ -95,14 +117,135 @@ const DROP_HEIGHT = 0.95;
 const DROP_SPREAD = 0.28;
 /** Width of the tilt band at release, in radians: half of it either way. */
 const DROP_TILT = 0.5;
+/**
+ * Total token area at target, as a fraction of the glass. A pile of tumbled
+ * shapes packs at roughly two thirds, so this is well below 1 and is not a
+ * "how full does it look" number in its own right — it is calibrated against
+ * the measured pile height. See computeTokenSize.
+ */
+const FILL_AT_TARGET = 0.63;
+/** Smallest a token may be drawn, in CSS pixels: below this it is a speck. */
+const MIN_TOKEN = 14;
+/** Where tokens stop nesting and start bridging, as a fraction of the width. */
+const PACK_KNEE = 0.36;
+/** How fast the pile outgrows its own area past that knee. */
+const PACK_PENALTY = 3;
+/**
+ * A token may be no wider than this fraction of the jar, nor this tall.
+ *
+ * This is not tidiness. Past roughly half the jar's width a pile stops being a
+ * pile: it is three or four big shapes bridging the glass with caves under
+ * them, and the fill estimate above — which assumes tokens settle into each
+ * other — stops holding and starts overflowing.
+ */
+const MAX_TOKEN_ACROSS = 2.25;
+const MAX_TOKEN_DOWN = 2.2;
+/**
+ * A jar shorter than this many tokens is a dish, so the fitted height stops
+ * here and a very small target simply looks generous rather than full. It
+ * matches MAX_TOKEN_DOWN on purpose: a floor below that cap would shrink the
+ * token that set the height, which would then ask for a shorter jar again.
+ */
+const MIN_CAVITY_TOKENS = 2.2;
+
+/**
+ * Mean footprint of a theme's tokens. Derived from the same hulls the physics
+ * bodies are built from, and memoised because it never changes for a theme.
+ */
+const footprints = new Map<ThemeId, number>();
+
+export function themeFootprint(themeId: ThemeId): number {
+  const cached = footprints.get(themeId);
+  if (cached !== undefined) return cached;
+  const defs = theme(themeId).tokens;
+  const total = defs.reduce((sum, def) => {
+    const points = def.vertices.map((v) => ({ ...v })) as unknown as Matter.Vertex[];
+    const hull = Vertices.hull(points) as unknown as Vec2[];
+    return sum + (polygonArea(hull) * def.scale * def.scale) / 10000;
+  }, 0);
+  const mean = total / Math.max(defs.length, 1);
+  footprints.set(themeId, mean);
+  return mean;
+}
+
+/**
+ * Footprint corrected for how badly big tokens pack.
+ *
+ * Small tokens nest into each other and the pile is close to the sum of their
+ * areas. Big ones bridge: three dinosaurs across the glass leave a cave under
+ * them, and the pile stands taller than its area says it should. Past
+ * `PACK_KNEE` of the jar's width, each token is therefore treated as taking up
+ * more room than it really does — without this a ten-token jar overflows,
+ * which is the one outcome that must never happen.
+ */
+function packedFootprint(footprint: number, tokenSize: number, width: number): number {
+  const relative = tokenSize / width;
+  return footprint * (1 + PACK_PENALTY * Math.max(0, relative - PACK_KNEE));
+}
+
+/**
+ * @see JarWorld.computeTokenSize — the rule, without needing a world.
+ *
+ * Iterated because the packing correction depends on the size it is choosing.
+ */
+export function tokenSizeFor(width: number, height: number, capacity: number, footprint: number): number {
+  const cap = Math.max(capacity, 1);
+  const max = Math.min(width / MAX_TOKEN_ACROSS, height / MAX_TOKEN_DOWN);
+  let size = max;
+  for (let i = 0; i < 3; i++) {
+    const packed = packedFootprint(footprint, size, width);
+    size = Math.min(max, Math.sqrt((width * height * FILL_AT_TARGET) / (cap * packed)));
+  }
+  return Math.max(MIN_TOKEN, size);
+}
+
+/**
+ * How tall the glass should be for this target — the other half of "a jar at
+ * its target looks full".
+ *
+ * Tokens can only get so big before a pile of them is a few large shapes with
+ * caves between them, so past a certain point a small target cannot fill a
+ * tall jar however big its tokens are drawn. The answer is to stop making the
+ * tokens bigger and make the jar shorter instead: five treats go in a small
+ * jar and fill it, a hundred go in a tall one. The jar is drawn to this height
+ * and stood on the bottom of the space it is given.
+ */
+export function fitCavity(
+  themeId: ThemeId,
+  capacity: number,
+  width: number,
+  maxHeight: number,
+): { tokenSize: number; height: number } {
+  const footprint = themeFootprint(themeId);
+  const cap = Math.max(capacity, 1);
+  let tokenSize = Math.min(width / MAX_TOKEN_ACROSS, maxHeight / MAX_TOKEN_DOWN);
+  let height = maxHeight;
+
+  // Height and token size each depend on the other — a shorter jar caps the
+  // token, and a smaller token wants a shorter jar — so they are solved
+  // together. Three passes is far more than this needs to settle.
+  for (let i = 0; i < 3; i++) {
+    // Invert the sizing rule: this is the height whose glass `cap` tokens of
+    // the current size would fill.
+    const packed = packedFootprint(footprint, tokenSize, width);
+    const wanted = (cap * packed * tokenSize * tokenSize) / (width * FILL_AT_TARGET);
+    height = Math.min(maxHeight, Math.max(wanted, tokenSize * MIN_CAVITY_TOKENS));
+    tokenSize = tokenSizeFor(width, height, cap, footprint);
+  }
+  return { tokenSize, height };
+}
 
 export class JarWorld {
   private engine: Matter.Engine;
   private opts: JarWorldOptions;
   private prepared = new Map<string, PreparedType>();
   private bodies = new Map<string, Matter.Body>();
+  /** The list the pile was built from, so it can be rebuilt at a new size. */
+  private tokens: PileToken[] = [];
   private walls: Matter.Body[] = [];
   private tokenSize = 32;
+  /** Mean share of its own square that a token of this theme covers. */
+  private footprint = 0.3;
   /** body -> its token type, so the draw loop never searches for it. */
   private bodyTypes = new WeakMap<Matter.Body, PreparedType>();
   /**
@@ -132,20 +275,35 @@ export class JarWorld {
       const points = def.vertices.map((v) => ({ ...v })) as unknown as Matter.Vertex[];
       const hull = Vertices.hull(points) as unknown as Vec2[];
       const centre = Vertices.centre(hull as unknown as Matter.Vector[]);
-      this.prepared.set(def.id, { def, hull, centre: { x: centre.x, y: centre.y } });
+      // The hull is authored in a 100x100 box and then drawn at `scale`, so its
+      // share of the token's square is its area over 10,000, scaled twice.
+      const footprint = (polygonArea(hull) * def.scale * def.scale) / 10000;
+      this.prepared.set(def.id, { def, hull, centre: { x: centre.x, y: centre.y }, footprint });
     }
+    const types = [...this.prepared.values()];
+    this.footprint = types.reduce((sum, t) => sum + t.footprint, 0) / Math.max(types.length, 1);
   }
 
   /**
-   * Tokens shrink as the target grows, so a 40-token jar fills up rather than
-   * overflowing. The area fraction is deliberately below 1 — a pile packs at
-   * roughly 60-70% efficiency and needs the headroom.
+   * Token size is set so that **a jar at its target looks full**. That is the
+   * whole reward: a child who can see the pile is nearly at the top does not
+   * need to read the progress bar. A ten-token jar therefore gets big tokens
+   * and a hundred-token jar small ones.
+   *
+   * The sum works forwards from the pile rather than from the box: `capacity`
+   * tokens, each covering `footprint` of its own square, must add up to
+   * `FILL_AT_TARGET` of the jar. `footprint` is measured from the theme's own
+   * hulls, so a jar of coins and a jar of stegosauruses fill to the same
+   * height even though a stegosaurus is mostly spikes and air.
+   *
+   * The clamps matter as much as the formula. Below about ten tokens no size
+   * can fill a jar — three tokens would each have to be a third of the glass —
+   * so `MAX_TOKEN` gives up gracefully rather than drawing something absurd,
+   * and a small target simply looks generous instead of full.
    */
   private computeTokenSize(): void {
     const { width, height, capacity } = this.opts;
-    const perToken = (width * height * 0.5) / Math.max(capacity, 6);
-    const side = Math.sqrt(perToken);
-    this.tokenSize = Math.max(16, Math.min(side, width / 3.2));
+    this.tokenSize = tokenSizeFor(width, height, capacity, this.footprint);
   }
 
   private buildWalls(): void {
@@ -157,30 +315,64 @@ export class JarWorld {
       Bodies.rectangle(width / 2, height + WALL / 2, width + WALL * 2, WALL, opts),
       Bodies.rectangle(-WALL / 2, height / 2, WALL, height * 3, opts),
       Bodies.rectangle(width + WALL / 2, height / 2, WALL, height * 3, opts),
-      // A lid above the mouth: without it a lively collision can launch a token
-      // off-screen for good.
+      // A lid above the mouth: without it a lively collision, or a shake,
+      // can launch a token off-screen for good.
       //
-      // Its height is derived from the scatter band rather than fixed, because
-      // a lid BELOW the spawn point is worse than no lid at all — tokens land
-      // on top of it and never reach the jar. That bug is invisible in the UI
-      // (the count is right, the pile is short) which is why the settle test
-      // asserts tokens are inside the glass, not merely somewhere finite.
+      // It must stay above everything the world ever spawns. A lid BELOW a
+      // spawn point is worse than no lid at all — tokens land on top of it and
+      // never reach the jar, and nothing in the UI shows it, because the count
+      // and the progress bar are both still right. Only the pile is short.
       Bodies.rectangle(width / 2, -this.lidHeight(), width + WALL * 2, WALL, opts),
     ];
     Composite.add(this.engine.world, this.walls);
   }
 
-  /** Distance above the jar mouth to the underside of the lid. */
+  /**
+   * Distance above the jar mouth to the underside of the lid. Generous on
+   * purpose: a shake throws the whole pile upward, and a low ceiling turns
+   * that into a compression rather than a tumble.
+   */
   private lidHeight(): number {
-    return this.tokenSize * (1 + SCATTER) + this.tokenSize * 3 + WALL / 2;
+    const clearance = this.opts.height * 0.6 + this.tokenSize * 4;
+    return Math.max(clearance, this.layoutReach() + this.tokenSize * 3) + WALL / 2;
+  }
+
+  /**
+   * Where the initial pile is laid out: a loose grid filling the jar from the
+   * floor up, which the settle then collapses into a heap.
+   *
+   * Tokens are NOT rained in from above. They were sized so that a full jar is
+   * a full jar, which makes a column of them taller than the glass itself —
+   * and a column that tall arches and jams on the way in, leaving tokens
+   * stranded above the glass where nothing can be seen of them.
+   */
+  private layout(): { cols: number; cellW: number; cellH: number } {
+    const cols = Math.max(1, Math.round(this.opts.width / (this.tokenSize * LAYOUT_X)));
+    return {
+      cols,
+      cellW: this.opts.width / cols,
+      cellH: this.tokenSize * LAYOUT_Y,
+    };
+  }
+
+  /** Highest point the initial layout reaches, as a distance above the mouth. */
+  private layoutReach(): number {
+    const { cols, cellH } = this.layout();
+    // capacity is the most tokens a round can hold, by construction, so this
+    // bounds the layout without needing the list that walls are built before.
+    const rows = Math.ceil(Math.max(this.opts.capacity, 1) / cols);
+    return Math.max(0, rows * cellH - this.opts.height);
   }
 
   /**
    * @param drop true for a token the grown-up just added, which falls in
-   * through the mouth; false for the first-load scatter, which is spread wide
-   * and tall so that one headless settle produces a pile, not a tower.
+   * through the mouth. False places the token in the starting layout instead:
+   * it is standing in for a token that went in during some earlier session,
+   * and the pile it belongs to is settled headlessly before anyone sees it.
+   * @param index position in the jar's token list, which decides its cell in
+   * that layout. Only used when `drop` is false.
    */
-  private makeBody(token: PileToken, drop: boolean): Matter.Body | null {
+  private makeBody(token: PileToken, index: number, drop: boolean): Matter.Body | null {
     const prep = this.prepared.get(token.tokenTypeId);
     if (!prep) return null;
 
@@ -188,14 +380,16 @@ export class JarWorld {
     const s = (this.tokenSize * prep.def.scale) / 100;
     const verts = prep.hull.map((v) => ({ x: v.x * s, y: v.y * s }));
 
-    const margin = this.tokenSize * 0.7;
-    const usable = Math.max(1, this.opts.width - margin * 2);
+    const { cols, cellW, cellH } = this.layout();
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const jitter = (rng() - 0.5) * cellW * 0.3;
     const x = drop
-      ? this.opts.width / 2 + (rng() - 0.5) * usable * DROP_SPREAD
-      : margin + rng() * usable;
+      ? this.opts.width / 2 + (rng() - 0.5) * this.opts.width * DROP_SPREAD
+      : Math.min(this.opts.width - cellW / 2, Math.max(cellW / 2, (col + 0.5) * cellW + jitter));
     const y = drop
       ? -this.tokenSize * (DROP_HEIGHT + rng() * 0.3)
-      : -this.tokenSize * (1 + rng() * SCATTER);
+      : this.opts.height - (row + 0.5) * cellH;
 
     const body = Bodies.fromVertices(x, y, [verts as unknown as Matter.Vector[]], {
       restitution: 0.18,
@@ -230,14 +424,31 @@ export class JarWorld {
     }
 
     const fresh: Matter.Body[] = [];
-    for (const t of tokens) {
-      if (this.bodies.has(t.id)) continue;
-      const body = this.makeBody(t, opts.animateNew === true);
-      if (!body) continue;
+    tokens.forEach((t, i) => {
+      if (this.bodies.has(t.id)) return;
+      const body = this.makeBody(t, i, opts.animateNew === true);
+      if (!body) return;
       this.bodies.set(t.id, body);
       fresh.push(body);
-    }
+    });
     if (fresh.length > 0) Composite.add(this.engine.world, fresh);
+    this.tokens = [...tokens];
+  }
+
+  /**
+   * Throw every body away and build the pile again from the token list.
+   *
+   * Token size is derived from the jar's size and target, so both of those
+   * changing mid-round would otherwise leave a pile drawn at the old scale.
+   * Rebuilding is cheap and safe precisely because positions are never
+   * persisted: a token is a seed, and the pile is a pure function of the list.
+   */
+  private rebuild(): void {
+    for (const body of this.bodies.values()) Composite.remove(this.engine.world, body);
+    this.bodies.clear();
+    const list = this.tokens;
+    this.tokens = [];
+    this.setTokens(list);
   }
 
   /** Step the engine without drawing, so the pile arrives pre-settled. */
@@ -265,23 +476,39 @@ export class JarWorld {
   }
 
   resize(width: number, height: number): void {
+    if (width === this.opts.width && height === this.opts.height) return;
     this.opts.width = width;
     this.opts.height = height;
-    this.computeTokenSize();
-    this.buildWalls();
+    this.refit();
   }
 
   setCapacity(capacity: number): void {
     if (capacity === this.opts.capacity) return;
     this.opts.capacity = capacity;
-    this.computeTokenSize();
-    // The lid is positioned relative to token size, so it has to move too.
-    this.buildWalls();
+    this.refit();
   }
 
+  /**
+   * Re-derive everything that depends on the jar's size or target. Bodies are
+   * rebuilt only when the token size actually moved, so a resize that rounds to
+   * the same size leaves a settled pile alone.
+   */
+  private refit(): void {
+    const before = this.tokenSize;
+    this.computeTokenSize();
+    // The lid is positioned relative to the jar and to token size, so it moves too.
+    this.buildWalls();
+    if (Math.abs(before - this.tokenSize) > 0.5) this.rebuild();
+  }
+
+  /**
+   * Paint every token at its current position, in the world's own coordinates.
+   *
+   * Clearing, clipping and placing the world within the jar belong to the
+   * caller: the world knows where its tokens are, not where on the page it is
+   * being drawn.
+   */
   draw(ctx: CanvasRenderingContext2D): void {
-    const { width, height } = this.opts;
-    ctx.clearRect(0, 0, width, height);
     for (const body of this.bodies.values()) {
       const prep = this.bodyTypes.get(body);
       if (!prep) continue;
@@ -337,6 +564,11 @@ export class JarWorld {
     Composite.clear(this.engine.world, false);
     Engine.clear(this.engine);
     this.bodies.clear();
+  }
+
+  /** How big one token is drawn, in CSS pixels. Derived from the target. */
+  get tokenPixels(): number {
+    return this.tokenSize;
   }
 
   /** Test seam: where every token ended up, in jar coordinates. */
