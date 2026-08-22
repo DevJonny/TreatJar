@@ -26,7 +26,13 @@
             <strong>{e.tokenLabel}</strong>
             <!-- The kind is spelled out, not just signalled by the +/− colour. -->
             <span class="kind">
-              {#if e.kind === 'added'}added{:else if e.removalKind === 'undo'}removed (mistake){:else}taken away{/if}
+              <!-- A theme change is not something the child did. Wording it as
+                   "taken away" would put punishments she never earned into her
+                   own history, one per treat. -->
+              {#if e.kind === 'added'}added
+              {:else if e.removalKind === 'undo'}removed (mistake)
+              {:else if e.removalKind === 'themeChange'}jar started again
+              {:else}taken away{/if}
             </span>
           </span>
           {#if e.reasonLabel}<span class="reason">{e.reasonLabel}</span>{/if}
