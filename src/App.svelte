@@ -126,10 +126,11 @@
   {#key editing}
     <JarConfigForm
       jar={editing === 'existing' ? activeJar : null}
+      tokens={store.tokens}
       oncancel={() => (editing = null)}
       onsave={(input) => {
         if (editing === 'existing' && activeJar) {
-          store.updateJar(activeJar.id, {
+          const patch = {
             name: input.name,
             themeId: input.themeId,
             target: input.target,
@@ -138,7 +139,16 @@
               label: r.label,
               tokenTypeId: r.tokenTypeId,
             })),
-          });
+          };
+          // A theme change with treats still in the jar has to write the jar
+          // and its tokens under one timestamp, or a mid-change sync can leave
+          // the two disagreeing. `retheme` is that single write; everything
+          // else is an ordinary patch.
+          if (input.disposition) {
+            store.retheme(activeJar.id, patch, input.disposition);
+          } else {
+            store.updateJar(activeJar.id, patch);
+          }
         } else {
           const jar = store.createJar(input);
           go({ kind: 'jar', jarId: jar.id });

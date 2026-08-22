@@ -2,18 +2,34 @@
   import { untrack } from 'svelte';
   import TokenGlyph from './TokenGlyph.svelte';
   import { THEMES, theme } from '../lib/themes.ts';
-  import { retargetForTheme, validateTarget, TOKEN_COUNT_MAX } from '../lib/jar.ts';
-  import { THEME_IDS, type Jar, type ThemeId } from '../lib/types.ts';
+  import {
+    defaultTokenMapping, liveTokens, projectedProgress, retargetForTheme, validateTarget,
+    TOKEN_COUNT_MAX, type TokenMapping,
+  } from '../lib/jar.ts';
+  import { THEME_IDS, type Jar, type ThemeId, type Token } from '../lib/types.ts';
 
   interface Draft { label: string; tokenTypeId: string }
+
+  /**
+   * What to do with the treats already in the jar when its theme changes.
+   * Only ever sent when the theme actually changed and the jar is not empty.
+   */
+  export type Disposition =
+    | { kind: 'convert'; mapping: TokenMapping }
+    | { kind: 'reset'; reasonText: string | null };
 
   interface Props {
     /** Existing jar to edit, or null to create a new one. */
     jar?: Jar | null;
-    onsave: (input: { name: string; themeId: ThemeId; target: number; reasons: Draft[] }) => void;
+    /** Every token, so the form can tell the grown-up what a theme change costs. */
+    tokens?: Token[];
+    onsave: (input: {
+      name: string; themeId: ThemeId; target: number; reasons: Draft[];
+      disposition: Disposition | null;
+    }) => void;
     oncancel: () => void;
   }
-  let { jar = null, onsave, oncancel }: Props = $props();
+  let { jar = null, tokens = [], onsave, oncancel }: Props = $props();
 
   // Seeded once, on purpose. `untrack` says so explicitly: re-reading `jar`
   // reactively here would discard whatever the user has half-typed the moment
@@ -27,6 +43,31 @@
   );
   let reasons = $state<Draft[]>(
     untrack(() => jar?.reasons.map((r) => ({ label: r.label, tokenTypeId: r.tokenTypeId })) ?? []),
+  );
+
+  /**
+   * The theme the jar is actually saved as, captured once.
+   *
+   * Every conversion is quoted FROM here, not from whatever was selected a
+   * moment ago. Tapping dinosaurs → money → space must offer a dinosaur-to-
+   * space rate; quoting from money would ask the grown-up what a coin she
+   * never owned is worth, and convert tokens that are still dinosaurs.
+   */
+  const savedThemeId = untrack(() => jar?.themeId ?? null);
+  const inJar = $derived(jar ? liveTokens(tokens, jar.currentRoundId) : []);
+  const themeChanged = $derived(savedThemeId !== null && themeId !== savedThemeId);
+  /** The question only arises for a jar with something in it to lose. */
+  const mustDecide = $derived(themeChanged && inJar.length > 0);
+
+  let disposition = $state<'convert' | 'reset'>('convert');
+  let mapping = $state<Record<string, string>>({});
+
+  /** Only the types actually in the jar are worth asking about. */
+  const toConvert = $derived(
+    savedThemeId === null ? [] :
+      theme(savedThemeId).tokens
+        .map((t) => ({ token: t, count: inJar.filter((k) => k.tokenTypeId === t.id).length }))
+        .filter((r) => r.count > 0),
   );
 
   const def = $derived(theme(themeId));
@@ -55,6 +96,8 @@
     themeId = next;
     // null is an empty or half-typed field, which is the user's to finish.
     if (target !== null) target = retargetForTheme(previous, next, target);
+    // Re-quoted from the SAVED theme, not `previous`: see `savedThemeId`.
+    mapping = savedThemeId === null ? {} : { ...defaultTokenMapping(savedThemeId, next) };
   }
 
   function addReason() {
@@ -71,6 +114,11 @@
       themeId,
       target,
       reasons: reasons.filter((r) => r.label.trim().length > 0),
+      disposition: !mustDecide
+        ? null
+        : disposition === 'convert'
+          ? { kind: 'convert', mapping }
+          : { kind: 'reset', reasonText: `Changed to ${def.label}` },
     });
   }
 </script>
@@ -100,6 +148,60 @@
       {/each}
     </div>
   </fieldset>
+
+  {#if mustDecide}
+    {@const projected = projectedProgress(jar!, tokens, themeId, mapping)}
+    <fieldset class="decide">
+      <legend>{jar?.name} already has {inJar.length} {inJar.length === 1 ? 'treat' : 'treats'} in this jar</legend>
+      <p class="hint">
+        They were earned as {theme(savedThemeId!).label.toLowerCase()}, so you need to say what they
+        are worth now — or start the jar again.
+      </p>
+
+      <div class="choices" role="radiogroup" aria-label="What happens to the treats already in the jar">
+        <button
+          type="button" role="radio" aria-checked={disposition === 'convert'}
+          class:selected={disposition === 'convert'} onclick={() => (disposition = 'convert')}
+        >Keep them</button>
+        <button
+          type="button" role="radio" aria-checked={disposition === 'reset'}
+          class:selected={disposition === 'reset'} onclick={() => (disposition = 'reset')}
+        >Start again</button>
+      </div>
+
+      {#if disposition === 'convert'}
+        <p class="hint">What is each one worth as {def.label.toLowerCase()}?</p>
+        {#each toConvert as row (row.token.id)}
+          <div class="rate">
+            <span class="from">
+              <TokenGlyph token={row.token} size={24} />
+              <span>{row.token.label}</span>
+              <span class="count">×{row.count}</span>
+            </span>
+            <span aria-hidden="true">→</span>
+            <select bind:value={mapping[row.token.id]} aria-label="What {row.token.label} becomes">
+              {#each def.tokens as t (t.id)}<option value={t.id}>{t.label}</option>{/each}
+            </select>
+          </div>
+        {/each}
+        <!-- Shown, not prevented: a hand-picked rate can legitimately fill the
+             jar, and that is much better seen here than discovered on save. -->
+        <p class="warn" class:error={target !== null && projected > target}>
+          {#if target === null}
+            The jar will read {def.progress.format(projected)}.
+          {:else}
+            The jar will read {def.progress.format(projected)} of {def.progress.format(target)}.
+            {#if projected >= target}That already fills it.{/if}
+          {/if}
+        </p>
+      {:else}
+        <p class="warn error">
+          The {inJar.length} {inJar.length === 1 ? 'treat' : 'treats'} will be taken out and the jar
+          will start from empty. They stay in the history.
+        </p>
+      {/if}
+    </fieldset>
+  {/if}
 
   <fieldset>
     <legend>Target {def.progress.mode === 'value' ? '(how much to save up)' : '(how many tokens)'}</legend>
@@ -159,6 +261,14 @@
   .presets { display: flex; flex-wrap: wrap; gap: 8px; }
   .presets button { min-height: var(--tap); padding: 0 14px; border: 2px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
   .custom { margin-top: 4px; }
+  .decide { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; gap: 10px; }
+  .decide legend { padding: 0 6px; }
+  .choices { display: flex; gap: 8px; }
+  .choices button { flex: 1; min-height: var(--tap); border: 2px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+  .rate { display: flex; align-items: center; gap: 8px; }
+  .rate .from { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; font-size: 0.85rem; }
+  .rate .count { color: var(--text-secondary); }
+  .rate select { flex: 0 1 auto; }
   .warn { margin: 0; font-size: 0.82rem; color: var(--text-secondary); }
   .warn.error { color: var(--danger); }
   .hint { margin: 0 0 4px; font-size: 0.82rem; color: var(--text-secondary); }
