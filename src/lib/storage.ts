@@ -11,7 +11,7 @@
  * discarding a jar wholesale would then propagate the loss to every device.
  */
 
-import { THEME_IDS, type Jar, type Reason, type Round, type ThemeId, type Token } from './types.ts';
+import { THEME_IDS, type Jar, type Reason, type RemovalKind, type Round, type ThemeId, type Token } from './types.ts';
 
 const KEY_JARS = 'treatjar.v1.jars';
 const KEY_ROUNDS = 'treatjar.v1.rounds';
@@ -98,7 +98,12 @@ function reviveToken(v: unknown): Token | null {
   let removal: Token['removal'];
   if (typeof removalRaw === 'object' && removalRaw !== null) {
     const r = removalRaw as Record<string, unknown>;
-    const kind = r['kind'] === 'consequence' ? 'consequence' : 'undo';
+    // Unknown kinds fall back to `undo` rather than rejecting the token: a
+    // file written by a NEWER client must still load here, and losing the
+    // exact wording of a removal is far better than losing the token.
+    const raw = r['kind'];
+    const kind: RemovalKind =
+      raw === 'consequence' || raw === 'themeChange' || raw === 'undo' ? raw : 'undo';
     removal = {
       kind,
       reasonText: typeof r['reasonText'] === 'string' ? r['reasonText'] : null,

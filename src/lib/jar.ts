@@ -109,6 +109,127 @@ export function retargetForTheme(from: ThemeId, to: ThemeId, target: number): nu
   return adds * smallest;
 }
 
+/**
+ * What each of the old theme's token types becomes in the new one.
+ *
+ * Keyed by the OLD theme's token type id. The grown-up chooses this — the app
+ * deliberately does not guess, because there is no answer it could derive that
+ * is right in both directions. A dinosaur has no denomination, so converting
+ * a count jar to money means inventing an exchange rate; converting back means
+ * throwing one away. Whoever knows what a T-Rex is worth in this house is the
+ * person filling in the form, not this module.
+ *
+ * The upshot for rule 1 is the good kind: because the rate is supplied rather
+ * than computed, nothing here needs to know or ask what mode either theme is
+ * in. The conversion is the same arithmetic for money → sweets as for
+ * dinosaurs → space.
+ */
+export type TokenMapping = Readonly<Record<string, string>>;
+
+/**
+ * The mapping offered before the grown-up edits it: everything becomes the new
+ * theme's cheapest token.
+ *
+ * The obvious default is index n → index n, the way `JarConfigForm` remaps
+ * `reasons`. It is wrong here, and loudly so: `retargetForTheme` converts the
+ * TARGET by pricing it at `adds × smallest`, so a 20-token jar becomes £10.00.
+ * Ranking the contents the same way prices eight dinosaurs at £17.00 and
+ * completes the jar the moment it is saved — the two halves of one theme
+ * change pulling in opposite directions.
+ *
+ * Defaulting to the smallest token makes them agree exactly. Each token is
+ * worth one `smallest`, the target is `adds × smallest`, so the fraction the
+ * jar displays is unchanged by the conversion: eight of twenty treats before,
+ * £4.00 of £10.00 after. It needs no branch on either theme's mode to do it,
+ * for the same reason `retargetForTheme` does not — count themes price a token
+ * at 1, so count → count is the identity and the ranks never mattered there.
+ *
+ * A grown-up who wants a T-Rex to be worth more than a fossil says so in the
+ * form. This is only the opening offer, and it is the one that changes nothing.
+ */
+export function defaultTokenMapping(from: ThemeId, to: ThemeId): TokenMapping {
+  const cheapest = theme(to).tokens.reduce((low, t) => (t.value < low.value ? t : low));
+  const mapping: Record<string, string> = {};
+  for (const t of theme(from).tokens) mapping[t.id] = cheapest.id;
+  return mapping;
+}
+
+/**
+ * Rewrite the round's live tokens into the new theme, one for one.
+ *
+ * One for one is the whole design, and it is what makes this safe to sync.
+ * Rewriting `tokenTypeId` on a token that already exists is an ordinary edit
+ * that merges by `lastModified` like any other (rule 2), so two devices
+ * converting the same jar converge on whichever conversion happened later.
+ * Minting replacement tokens instead — which is what preserving the progress
+ * FRACTION across a mode change would require — would give each device its own
+ * fresh ids, and `mergeById` would keep both sets and double the child's
+ * progress. Tombstoning is likewise avoided: rule 3 keeps history derivable
+ * from the token list, and a convert is not a removal.
+ *
+ * `seed` is deliberately preserved, so the pile settles into recognisably the
+ * same heap it was before rather than reshuffling itself as a side effect.
+ *
+ * Tokens outside the current round are left exactly as they are: past rounds
+ * are history, and history records what was actually in the jar at the time.
+ */
+export function convertTokens(
+  jar: Jar,
+  tokens: readonly Token[],
+  mapping: TokenMapping,
+  at: string = nowIso(),
+): Token[] {
+  const live = new Set(liveTokens(tokens, jar.currentRoundId).map((t) => t.id));
+  return tokens.map((t) => {
+    if (!live.has(t.id)) return t;
+    const next = mapping[t.tokenTypeId];
+    if (next === undefined || next === t.tokenTypeId) return t;
+    return { ...t, tokenTypeId: next, lastModified: at };
+  });
+}
+
+/**
+ * Empty the jar because its theme changed, without deleting anything.
+ *
+ * A tombstone rather than a splice, for the reasons in `removeToken` — but
+ * under its own `RemovalKind`, so the history says the jar was emptied and not
+ * that the child lost thirty treats.
+ */
+export function clearTokensForThemeChange(
+  jar: Jar,
+  tokens: readonly Token[],
+  reasonText: string | null = null,
+  at: string = nowIso(),
+): Token[] {
+  const live = new Set(liveTokens(tokens, jar.currentRoundId).map((t) => t.id));
+  return tokens.map((t) =>
+    live.has(t.id)
+      ? { ...t, removal: { kind: 'themeChange' as const, reasonText, removedUtc: at }, lastModified: at }
+      : t,
+  );
+}
+
+/**
+ * What `progress` would read after converting, given a target and a mapping.
+ *
+ * The form shows this before anything is saved, because a hand-picked mapping
+ * can land anywhere: price a dinosaur at 50p and a twelve-token jar converts
+ * to £6.00 against a £1.00 target, completing it the instant it is saved. That
+ * is a legitimate thing to want and a terrible thing to discover afterwards,
+ * so it is displayed rather than prevented.
+ */
+export function projectedProgress(
+  jar: Jar,
+  tokens: readonly Token[],
+  to: ThemeId,
+  mapping: TokenMapping,
+): number {
+  return liveTokens(tokens, jar.currentRoundId).reduce((sum, t) => {
+    const next = mapping[t.tokenTypeId];
+    return sum + (next === undefined ? 0 : (tokenType(to, next)?.value ?? 0));
+  }, 0);
+}
+
 export const TOKEN_COUNT_WARN = 80;
 export const TOKEN_COUNT_MAX = 120;
 

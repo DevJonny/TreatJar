@@ -18,7 +18,10 @@ import {
   saveActiveJarId, saveJars, saveRounds, saveTokens,
 } from './storage.ts';
 import { loadPrefs, prefersReducedMotion, savePrefs, type Preferences } from './prefs.ts';
-import { addToken, closeRound, createJar, lastAddedToken, pruneRounds, removeToken, type NewJarInput } from './jar.ts';
+import {
+  addToken, clearTokensForThemeChange, closeRound, convertTokens, createJar, lastAddedToken,
+  nowIso, pruneRounds, removeToken, type NewJarInput, type TokenMapping,
+} from './jar.ts';
 import { SyncService, type LocalState } from './sync/syncService.ts';
 import { googleAuth } from './sync/googleAuth.ts';
 import type { Jar, Round, SyncStatus, Token } from './types.ts';
@@ -113,6 +116,37 @@ class Store {
     this.jars = this.jars.map((j) =>
       j.id === id ? { ...j, ...patch, lastModified: new Date().toISOString() } : j,
     );
+    this.touched();
+  }
+
+  /**
+   * Change a jar's theme and settle what happens to the treats already in it.
+   *
+   * This exists as one method rather than an `updateJar` followed by a token
+   * pass because of the timestamp. Both halves are written with a single `at`,
+   * so a device that syncs mid-change cannot land a jar in one theme holding
+   * tokens converted for another: `mergeById` arbitrates each entity by
+   * `lastModified`, and giving the jar and its tokens the same one means the
+   * later device's change wins consistently across all of them.
+   *
+   * `disposition` is the grown-up's answer to what the jar's contents mean in
+   * the new theme, and there is deliberately no default — see `TokenMapping`.
+   */
+  retheme(
+    id: string,
+    patch: Partial<Omit<Jar, 'id'>>,
+    disposition: { kind: 'convert'; mapping: TokenMapping } | { kind: 'reset'; reasonText: string | null },
+  ): void {
+    const jar = this.jars.find((j) => j.id === id);
+    if (!jar) return;
+    const at = nowIso();
+
+    this.tokens =
+      disposition.kind === 'convert'
+        ? convertTokens(jar, this.tokens, disposition.mapping, at)
+        : clearTokensForThemeChange(jar, this.tokens, disposition.reasonText, at);
+
+    this.jars = this.jars.map((j) => (j.id === id ? { ...j, ...patch, lastModified: at } : j));
     this.touched();
   }
 

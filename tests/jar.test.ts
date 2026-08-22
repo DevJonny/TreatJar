@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addToken, closeRound, createJar, formatProgress, formatTarget, history, isComplete,
+  addToken, clearTokensForThemeChange, closeRound, convertTokens, createJar, defaultTokenMapping,
+  formatProgress, formatTarget, history, isComplete, projectedProgress,
   lastAddedToken, liveTokens, progress, progressFraction, projectedTokenCount, pruneRounds,
   removeToken, restoreToken, retargetForTheme, validateTarget, TOKEN_COUNT_MAX,
 } from '../src/lib/jar.ts';
-import type { Round, Token } from '../src/lib/types.ts';
+import { theme, tokenType } from '../src/lib/themes.ts';
+import { THEME_IDS, type Round, type Token } from '../src/lib/types.ts';
 
 const dinoJar = () => createJar({
   name: 'Ellie', themeId: 'dinosaurs', target: 20,
@@ -106,6 +108,197 @@ describe('removal is a tombstone, not a splice', () => {
     expect(lastAddedToken(jar, [a, b])?.tokenTypeId).toBe('stego');
     expect(lastAddedToken(jar, [a, removeToken(b, 'undo')])?.tokenTypeId).toBe('trex');
     expect(lastAddedToken(jar, [])).toBeNull();
+  });
+});
+
+describe('changing a jar\'s theme with treats still in it', () => {
+  // The grown-up supplies the exchange rate; nothing here derives one. These
+  // tests exist mostly to pin the two properties that make the choice safe to
+  // sync: one token in, one token out, and never a mint.
+  const seeded = () => {
+    const { jar, round } = dinoJar();
+    const tokens = addMany(jar, ['trex', 'stego', 'raptor', 'bone']);
+    return { jar, round, tokens };
+  };
+
+  describe('the default mapping', () => {
+    it('offers the new theme\'s cheapest token for everything', () => {
+      const mapping = defaultTokenMapping('dinosaurs', 'money');
+      const cheapest = theme('money').tokens.reduce((low, t) => (t.value < low.value ? t : low));
+      for (const t of theme('dinosaurs').tokens) expect(mapping[t.id]).toBe(cheapest.id);
+    });
+
+    it('converts the contents on the same rule retargetForTheme uses', () => {
+      // The invariant is *treats added*, not the fraction on the bar, and the
+      // two are only the same thing in a count theme. retargetForTheme prices
+      // the new target at `adds x smallest`; defaulting every token to
+      // `smallest` prices the contents the same way, so the jar goes on
+      // reading "n treats towards N". A rank-for-rank default has no such
+      // property and fills the jar on save.
+      for (const from of THEME_IDS) {
+        for (const to of THEME_IDS) {
+          if (from === to) continue;
+          const { jar } = createJar({ name: 'E', themeId: from, target: theme(from).progress.targetPresets[1]!, reasons: [] });
+          const tokens = addMany(jar, theme(from).tokens.map((t) => t.id));
+          const target = retargetForTheme(from, to, jar.target);
+
+          const after = projectedProgress(jar, tokens, to, defaultTokenMapping(from, to)) / target;
+          const adds = tokens.length / projectedTokenCount(from, jar.target);
+          expect(after).toBeCloseTo(adds, 10);
+        }
+      }
+    });
+
+    it('keeps a count jar reading precisely what it read before', () => {
+      // The everyday case — a dinosaur jar a child is halfway through — where
+      // preserving the adds also preserves the bar exactly. Eight of twenty
+      // treats becomes GBP 4.00 of GBP 10.00, and nothing appears to change.
+      const { jar } = createJar({ name: 'Ellie', themeId: 'dinosaurs', target: 20, reasons: [] });
+      const tokens = addMany(jar, ['trex', 'stego', 'raptor', 'bone', 'trex', 'stego', 'raptor', 'bone']);
+      const target = retargetForTheme('dinosaurs', 'money', jar.target);
+      const projected = projectedProgress(jar, tokens, 'money', defaultTokenMapping('dinosaurs', 'money'));
+
+      expect(progress(jar, tokens)).toBe(8);
+      expect(jar.target).toBe(20);
+      expect(projected).toBe(400);
+      expect(target).toBe(1000);
+      expect(projected / target).toBeCloseTo(8 / 20, 10);
+    });
+
+    it('cannot preserve the bar out of a value theme, and does not pretend to', () => {
+      // Four coins are 85% of a GBP 10.00 jar but only four things. Converting
+      // to dinosaurs, four things is what there is: 4 of 20. This is a real
+      // limitation of one-token-in-one-token-out, which is why the form shows
+      // the projected reading rather than quietly applying it.
+      const { jar } = createJar({ name: 'Sam', themeId: 'money', target: 1000, reasons: [] });
+      const tokens = addMany(jar, ['coin-50', 'coin-100', 'coin-200', 'note-500']);
+      expect(progress(jar, tokens)).toBe(850);
+
+      const projected = projectedProgress(jar, tokens, 'dinosaurs', defaultTokenMapping('money', 'dinosaurs'));
+      expect(projected).toBe(4);
+      expect(retargetForTheme('money', 'dinosaurs', 1000)).toBe(20);
+    });
+
+    it('covers every token type the old theme can mint', () => {
+      for (const from of THEME_IDS) {
+        for (const to of THEME_IDS) {
+          const mapping = defaultTokenMapping(from, to);
+          for (const t of theme(from).tokens) {
+            // An unmapped type would convert to nothing and silently orphan
+            // the token — the exact bug this whole feature exists to end.
+            expect(tokenType(to, mapping[t.id]!)).not.toBeNull();
+          }
+        }
+      }
+    });
+  });
+
+  describe('converting', () => {
+    it('keeps one token for each token, never minting or dropping', () => {
+      const { jar, tokens } = seeded();
+      const after = convertTokens(jar, tokens, defaultTokenMapping('dinosaurs', 'money'));
+      expect(after).toHaveLength(tokens.length);
+      expect(after.map((t) => t.id)).toEqual(tokens.map((t) => t.id));
+    });
+
+    it('leaves every token resolvable in the new theme', () => {
+      const { jar, tokens } = seeded();
+      const mapping = defaultTokenMapping('dinosaurs', 'money');
+      const moneyJar = { ...jar, themeId: 'money' as const, target: 1000 };
+      const after = convertTokens(jar, tokens, mapping);
+      for (const t of after) expect(tokenType('money', t.tokenTypeId)).not.toBeNull();
+      expect(liveTokens(after, moneyJar.currentRoundId)).toHaveLength(4);
+    });
+
+    it('preserves the seed, so the pile does not reshuffle itself', () => {
+      const { jar, tokens } = seeded();
+      const after = convertTokens(jar, tokens, defaultTokenMapping('dinosaurs', 'space'));
+      expect(after.map((t) => t.seed)).toEqual(tokens.map((t) => t.seed));
+    });
+
+    it('honours a hand-picked rate rather than any rate of its own', () => {
+      const { jar, tokens } = seeded();
+      // Every dinosaur is worth 50p in this house.
+      const mapping = Object.fromEntries(theme('dinosaurs').tokens.map((t) => [t.id, 'coin-50']));
+      const after = convertTokens(jar, tokens, mapping);
+      expect(after.every((t) => t.tokenTypeId === 'coin-50')).toBe(true);
+      expect(progress({ ...jar, themeId: 'money', target: 1000 }, after)).toBe(200);
+    });
+
+    it('marks converted tokens as edited so the change merges', () => {
+      const { jar, tokens } = seeded();
+      const at = '2026-06-01T12:00:00.000Z';
+      const after = convertTokens(jar, tokens, defaultTokenMapping('dinosaurs', 'money'), at);
+      for (const t of after) expect(t.lastModified).toBe(at);
+    });
+
+    it('leaves earlier rounds alone, because they are history', () => {
+      const { jar, round, tokens } = seeded();
+      const { jar: next } = closeRound(jar, round);
+      const after = convertTokens(next, tokens, defaultTokenMapping('dinosaurs', 'money'));
+      // The old round's tokens still say what was actually in the jar then.
+      expect(after.map((t) => t.tokenTypeId)).toEqual(tokens.map((t) => t.tokenTypeId));
+    });
+
+    it('does not touch a token that is already removed', () => {
+      const { jar, tokens } = seeded();
+      const withRemoval = [removeToken(tokens[0]!, 'consequence', 'Shouted'), ...tokens.slice(1)];
+      const after = convertTokens(jar, withRemoval, defaultTokenMapping('dinosaurs', 'money'));
+      expect(after[0]!.tokenTypeId).toBe('trex');
+      expect(after[0]!.removal).toMatchObject({ kind: 'consequence' });
+    });
+  });
+
+  describe('resetting instead', () => {
+    it('empties the jar without deleting a thing', () => {
+      const { jar, tokens } = seeded();
+      const after = clearTokensForThemeChange(jar, tokens);
+      expect(after).toHaveLength(4);
+      expect(liveTokens(after, jar.currentRoundId)).toHaveLength(0);
+      expect(progress(jar, after)).toBe(0);
+    });
+
+    it('says the theme changed, not that the child did something wrong', () => {
+      const { jar, round, tokens } = seeded();
+      const after = clearTokensForThemeChange(jar, tokens, 'Changed to Money');
+      for (const t of after) expect(t.removal?.kind).toBe('themeChange');
+
+      const log = history(jar, after, [round]);
+      const removals = log.filter((e) => e.kind === 'removed');
+      expect(removals).toHaveLength(4);
+      // Not 'consequence' — that renders as "taken away".
+      for (const e of removals) expect(e.removalKind).toBe('themeChange');
+    });
+
+    it('keeps the adds in the history, because they happened', () => {
+      const { jar, round, tokens } = seeded();
+      const after = clearTokensForThemeChange(jar, tokens);
+      expect(history(jar, after, [round]).filter((e) => e.kind === 'added')).toHaveLength(4);
+    });
+  });
+
+  describe('the preview the form shows before saving', () => {
+    it('reports what progress will read after converting', () => {
+      const { jar, tokens } = seeded();
+      const mapping = Object.fromEntries(theme('dinosaurs').tokens.map((t) => [t.id, 'coin-50']));
+      expect(projectedProgress(jar, tokens, 'money', mapping)).toBe(200);
+    });
+
+    it('agrees with what progress actually reads afterwards', () => {
+      const { jar, tokens } = seeded();
+      const mapping = defaultTokenMapping('dinosaurs', 'money');
+      const predicted = projectedProgress(jar, tokens, 'money', mapping);
+      const moneyJar = { ...jar, themeId: 'money' as const, target: 1000 };
+      expect(progress(moneyJar, convertTokens(jar, tokens, mapping))).toBe(predicted);
+    });
+
+    it('can exceed the target, which is exactly why it is shown', () => {
+      const { jar, tokens } = seeded();
+      const mapping = Object.fromEntries(theme('dinosaurs').tokens.map((t) => [t.id, 'note-500']));
+      const projected = projectedProgress(jar, tokens, 'money', mapping);
+      expect(projected).toBe(2000);
+      expect(isComplete({ ...jar, themeId: 'money', target: 100 }, convertTokens(jar, tokens, mapping))).toBe(true);
+    });
   });
 });
 

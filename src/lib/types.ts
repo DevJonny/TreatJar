@@ -96,7 +96,20 @@ export interface Round extends SyncMeta {
   completedUtc: string | null;
 }
 
-export type RemovalKind = 'undo' | 'consequence';
+/**
+ * Why a token left the jar.
+ *
+ * `themeChange` is not a judgement on the child and must never be worded like
+ * one: it is the grown-up choosing to empty the jar rather than convert it
+ * when the theme changed. Reusing `undo` ("removed (mistake)") or
+ * `consequence` ("taken away") would put thirty punishments she did not earn
+ * into her own history.
+ *
+ * Older clients reading a synced file will not know this value; `storage.ts`
+ * coerces anything unrecognised to `undo`, so they degrade to slightly wrong
+ * wording rather than failing to load the jar at all.
+ */
+export type RemovalKind = 'undo' | 'consequence' | 'themeChange';
 
 export interface TokenRemoval {
   kind: RemovalKind;
