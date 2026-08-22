@@ -25,11 +25,18 @@ class InstallController {
   canPrompt = $state(false);
   standalone = $state(false);
   ios = $state(false);
+  /** Sticky: the browser offered once, so the section must not disappear later. */
+  everOffered = $state(false);
   /** Announced after a choice is made, since the button vanishing is not an announcement. */
   said = $state('');
 
   get offer(): InstallOffer {
-    return installOffer({ standalone: this.standalone, canPrompt: this.canPrompt, ios: this.ios });
+    return installOffer({
+      standalone: this.standalone,
+      canPrompt: this.canPrompt,
+      ios: this.ios,
+      everOffered: this.everOffered,
+    });
   }
 
   /**
@@ -52,6 +59,7 @@ class InstallController {
       e.preventDefault();
       this.deferred = e as BeforeInstallPromptEvent;
       this.canPrompt = true;
+      this.everOffered = true;
     };
     const onInstalled = () => {
       this.deferred = null;
@@ -61,13 +69,30 @@ class InstallController {
     };
     const onDisplay = (e: MediaQueryListEvent) => { this.standalone = e.matches; };
 
+    // Safari did not put `addEventListener` on MediaQueryList until 14, and
+    // this runs inside onMount — so calling it blind does not degrade a
+    // feature, it throws before the app has mounted and leaves an old iPhone
+    // looking at a white screen. The deprecated pair is the fallback.
+    const legacy = media as MediaQueryList & {
+      addListener?: (cb: (e: MediaQueryListEvent) => void) => void;
+      removeListener?: (cb: (e: MediaQueryListEvent) => void) => void;
+    };
+    const listen = () => {
+      if (typeof media.addEventListener === 'function') media.addEventListener('change', onDisplay);
+      else legacy.addListener?.(onDisplay);
+    };
+    const unlisten = () => {
+      if (typeof media.removeEventListener === 'function') media.removeEventListener('change', onDisplay);
+      else legacy.removeListener?.(onDisplay);
+    };
+
     window.addEventListener('beforeinstallprompt', onBefore);
     window.addEventListener('appinstalled', onInstalled);
-    media.addEventListener('change', onDisplay);
+    listen();
     return () => {
       window.removeEventListener('beforeinstallprompt', onBefore);
       window.removeEventListener('appinstalled', onInstalled);
-      media.removeEventListener('change', onDisplay);
+      unlisten();
     };
   }
 
@@ -88,7 +113,9 @@ class InstallController {
       const { outcome } = await e.userChoice;
       // 'accepted' is left to the `appinstalled` listener, which is what
       // actually knows the install finished.
-      if (outcome === 'dismissed') this.said = 'Not installed. You can add it later from Settings.';
+      // Matches what the section now says: the prompt is spent, so pointing
+      // them back at Settings would send them to this very message.
+      if (outcome === 'dismissed') this.said = 'Not installed. You can still add it from your browser\'s menu.';
     } catch {
       this.said = 'That did not work. You can add it from your browser menu.';
     }

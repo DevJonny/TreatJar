@@ -51,4 +51,22 @@ describe('what to offer', () => {
     // section explaining that it cannot do anything.
     expect(installOffer({ standalone: false, canPrompt: false, ios: false })).toBe('none');
   });
+
+  it('keeps talking after the prompt has been used up', () => {
+    // The browser hands the prompt over once. If a dismissal dropped us back
+    // to 'none' the whole section would vanish mid-interaction — tap Install,
+    // think better of it, and the option is gone with nothing to say where.
+    expect(installOffer({ standalone: false, canPrompt: false, ios: false, everOffered: true }))
+      .toBe('spent');
+  });
+
+  it('still prefers a live prompt to the spent message', () => {
+    expect(installOffer({ standalone: false, canPrompt: true, ios: false, everOffered: true }))
+      .toBe('prompt');
+  });
+
+  it('still reports an install that completed after a dismissal', () => {
+    expect(installOffer({ standalone: true, canPrompt: false, ios: false, everOffered: true }))
+      .toBe('installed');
+  });
 });
