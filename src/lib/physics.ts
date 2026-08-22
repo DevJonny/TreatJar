@@ -86,9 +86,14 @@ const SCATTER = 6;
  * enters slowly and accelerates — which is what a drop looks like.
  */
 const DROP_HEIGHT = 0.95;
-/** Sideways jitter at release, as a fraction of the jar's width. */
+/**
+ * Sideways jitter at release, as a fraction of the *usable* width — the jar
+ * less the margin a token needs to clear the walls, which is the same span the
+ * scatter draws from. Applied either side of centre, so the release point lands
+ * within half of this of the middle.
+ */
 const DROP_SPREAD = 0.28;
-/** Radians of tilt at release. A drop wobbles; it does not cartwheel. */
+/** Width of the tilt band at release, in radians: half of it either way. */
 const DROP_TILT = 0.5;
 
 export class JarWorld {
@@ -200,8 +205,8 @@ export class JarWorld {
       sleepThreshold: 40,
     });
     // A dropped token is released almost upright and turns lazily as it falls;
-    // a scattered one may be at any angle, because it is standing in for a
-    // token that was dropped in some earlier session and has long since settled.
+    // a scattered one starts anywhere within a half-turn, because it is standing
+    // in for a token dropped in some earlier session that has long since settled.
     Body.setAngle(body, (rng() - 0.5) * (drop ? DROP_TILT : Math.PI));
     Body.setAngularVelocity(body, (rng() - 0.5) * (drop ? 0.06 : 0.25));
     this.bodyTypes.set(body, prep);
