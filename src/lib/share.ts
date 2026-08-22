@@ -18,7 +18,7 @@
 
 import { THEMES, tokenTypeIndex } from './themes.ts';
 import { THEME_IDS, type ThemeId, type Jar, type Token } from './types.ts';
-import { liveTokens } from './jar.ts';
+import { visibleTokens } from './jar.ts';
 
 /** Bounds both the URL length and the number of bodies a link can conjure. */
 export const MAX_SHARED_TOKENS = 200;
@@ -64,7 +64,9 @@ function b64urlDecode(payload: string): string | null {
 }
 
 export function encodeShare(jar: Jar, tokens: readonly Token[], sharedAt = Date.now()): string {
-  const live = liveTokens(tokens, jar.currentRoundId).slice(0, MAX_SHARED_TOKENS);
+  // Visible, not live: an orphan encodes as -1 and is filtered out below, so
+  // taking them first would spend the cap on tokens the link cannot carry.
+  const live = visibleTokens(jar, tokens).slice(0, MAX_SHARED_TOKENS);
   const wire: Wire = {
     v: 1,
     n: jar.name.slice(0, MAX_SHARED_NAME),
