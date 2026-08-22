@@ -8,7 +8,7 @@
  * see.
  */
 import { describe, expect, it } from 'vitest';
-import { JarWorld, type PileToken } from '../src/lib/physics.ts';
+import { JarWorld, fitCavity, type PileToken } from '../src/lib/physics.ts';
 
 const W = 320;
 const H = 480;
@@ -166,6 +166,148 @@ describe('a token added by hand drops in through the mouth', () => {
     world.settle(400);
     expectInsideGlass(world);
     expect(world.positions()).toHaveLength(7);
+    world.destroy();
+  });
+});
+
+/**
+ * The point of the whole reward: a jar at its target must LOOK full. A child
+ * who can see the pile is at the top does not have to read the progress bar,
+ * and a ten-token jar that ends the round a third full reads as a let-down
+ * however correct the arithmetic is.
+ *
+ * These are the two halves of that promise — it fills up, and it never spills.
+ */
+describe('a jar at its target looks full', () => {
+  const fillFor = (capacity: number, themeId: 'dinosaurs' | 'money' = 'dinosaurs') => {
+    const world = new JarWorld({ width: W, height: H, themeId, capacity });
+    const types = themeId === 'money'
+      ? ['coin-50', 'coin-100', 'coin-200', 'note-500']
+      : ['trex', 'stego', 'raptor', 'bone'];
+    world.setTokens(tokens(capacity, types));
+    world.settle(500);
+    const ys = world.positions().map((p) => p.y);
+    const size = world.tokenPixels;
+    world.destroy();
+    return { top: 1 - Math.min(...ys) / H, spilled: ys.filter((y) => y < 0).length, size };
+  };
+
+  it.each([15, 20, 30, 40, 60, 120])('fills most of the glass at a target of %i', (capacity) => {
+    const { top, spilled } = fillFor(capacity);
+    expect(spilled).toBe(0);
+    expect(top).toBeGreaterThan(0.65);
+    // And has not overflowed: the last token still has somewhere to land.
+    expect(top).toBeLessThan(1);
+  });
+
+  it('fills a money jar to the same sort of level', () => {
+    const { top, spilled } = fillFor(30, 'money');
+    expect(spilled).toBe(0);
+    expect(top).toBeGreaterThan(0.65);
+  });
+
+  it('draws bigger tokens for a smaller target', () => {
+    const small = fillFor(10).size;
+    const medium = fillFor(30).size;
+    const large = fillFor(120).size;
+    expect(small).toBeGreaterThan(medium);
+    expect(medium).toBeGreaterThan(large);
+  });
+
+  it('leaves a jar short of its target visibly short', () => {
+    const world = new JarWorld({ width: W, height: H, themeId: 'dinosaurs', capacity: 30 });
+    world.setTokens(tokens(6, ['trex', 'stego', 'raptor', 'bone']));
+    world.settle(400);
+    const top = 1 - Math.min(...world.positions().map((p) => p.y)) / H;
+    expect(top).toBeLessThan(0.5);
+    world.destroy();
+  });
+});
+
+describe('the pile is rebuilt when its scale changes', () => {
+  it('redraws at a new size when the target changes', () => {
+    const list = tokens(12, ['trex', 'bone']);
+    const world = new JarWorld({ width: W, height: H, themeId: 'dinosaurs', capacity: 12 });
+    world.setTokens(list);
+    world.settle();
+    const before = world.tokenPixels;
+
+    world.setCapacity(90);
+    world.settle();
+
+    // Token size is derived from the target, so a pile left at the old scale
+    // would be drawn wrong until the next reload.
+    expect(world.tokenPixels).toBeLessThan(before);
+    expect(world.positions()).toHaveLength(12);
+    expectInsideGlass(world);
+    world.destroy();
+  });
+
+  it('keeps every token when the jar is resized', () => {
+    const list = tokens(10, ['stego']);
+    const world = new JarWorld({ width: W, height: H, themeId: 'dinosaurs', capacity: 10 });
+    world.setTokens(list);
+    world.settle();
+
+    world.resize(W * 1.6, H * 0.8);
+    world.settle(400);
+
+    expect(world.positions()).toHaveLength(10);
+    for (const p of world.positions()) {
+      expect(p.x).toBeGreaterThanOrEqual(0);
+      expect(p.x).toBeLessThanOrEqual(W * 1.6);
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(H * 0.8);
+    }
+    world.destroy();
+  });
+});
+
+/**
+ * The other half of "a jar at its target looks full": when tokens cannot get
+ * big enough to fill a full-height jar, the jar gets shorter instead. Five
+ * treats go in a small jar; a hundred go in a tall one.
+ */
+describe('the jar is fitted to its target', () => {
+  const AVAILABLE_W = 250;
+  const AVAILABLE_H = 420;
+
+  const fit = (capacity: number, themeId: 'dinosaurs' | 'money' = 'dinosaurs') =>
+    fitCavity(themeId, capacity, AVAILABLE_W, AVAILABLE_H);
+
+  it('gives a small target a shorter jar and bigger tokens', () => {
+    const small = fit(6);
+    const big = fit(60);
+    expect(small.height).toBeLessThan(big.height);
+    expect(small.tokenSize).toBeGreaterThan(big.tokenSize);
+  });
+
+  it('never asks for more room than it was offered', () => {
+    for (const capacity of [1, 5, 10, 20, 40, 80, 120]) {
+      const { height, tokenSize } = fit(capacity);
+      expect(height).toBeLessThanOrEqual(AVAILABLE_H);
+      expect(height).toBeGreaterThan(0);
+      expect(tokenSize).toBeGreaterThanOrEqual(14);
+      // A jar must stay a jar, however few treats it is for.
+      expect(height).toBeGreaterThan(tokenSize * 2);
+    }
+  });
+
+  it('uses the whole height once the target is large enough to need it', () => {
+    expect(fit(40).height).toBeCloseTo(AVAILABLE_H, 5);
+    expect(fit(120).height).toBeCloseTo(AVAILABLE_H, 5);
+  });
+
+  it.each([10, 20, 40, 80])('fills the jar it fitted, at a target of %i', (capacity) => {
+    // End to end: fit the glass to the target, fill it to the target, and the
+    // pile should reach the top of that glass without spilling out of it.
+    const { height } = fit(capacity);
+    const world = new JarWorld({ width: AVAILABLE_W, height, themeId: 'dinosaurs', capacity });
+    world.setTokens(tokens(capacity, ['trex', 'stego', 'raptor', 'bone']));
+    world.settle(500);
+    const ys = world.positions().map((p) => p.y);
+    expect(ys.filter((y) => y < 0)).toHaveLength(0);
+    expect(1 - Math.min(...ys) / height).toBeGreaterThan(0.65);
     world.destroy();
   });
 });
