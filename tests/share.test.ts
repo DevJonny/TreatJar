@@ -49,6 +49,23 @@ describe('round trip', () => {
   });
 });
 
+describe('a jar holding tokens orphaned by an old theme change', () => {
+  it('does not let them eat the link\'s token budget', () => {
+    // An orphan encodes as -1 and is filtered out, so taking them first would
+    // spend the cap on tokens the link cannot carry and arrive looking emptier
+    // than the jar it was shared from.
+    const { jar } = createJar({ name: 'Ellie', themeId: 'money', target: 1000, reasons: [] });
+    const orphans = Array.from({ length: MAX_SHARED_TOKENS }, () =>
+      addToken({ jar, tokenTypeId: 'trex' }));
+    const real = [addToken({ jar, tokenTypeId: 'coin-50' })];
+
+    const decoded = decodeShare(encodeShare(jar, [...orphans, ...real]))!;
+    expect(decoded).not.toBeNull();
+    expect(sharedPile(decoded)).toHaveLength(1);
+    expect(sharedProgress(decoded)).toBe(50);
+  });
+});
+
 describe('hostile and broken payloads return null, never throw', () => {
   const bad = [
     '', 'not-base64!!', 'YWJj', b64('{}'), b64('null'), b64('[]'), b64('"hi"'),

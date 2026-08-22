@@ -1,7 +1,7 @@
 <script lang="ts">
   import TokenGlyph from './TokenGlyph.svelte';
   import { theme } from '../lib/themes.ts';
-  import { formatProgress, formatTarget, isComplete, liveTokens, progressFraction } from '../lib/jar.ts';
+  import { formatProgress, formatTarget, isComplete, progressFraction, visibleTokens } from '../lib/jar.ts';
   import type { Jar, Token } from '../lib/types.ts';
 
   interface Props {
@@ -42,7 +42,9 @@
             </span>
             <span class="track"><span class="fill" style:width="{progressFraction(jar, jarTokens) * 100}%" style:background={def.palette.accent}></span></span>
             <span class="glyphs">
-              {#each liveTokens(jarTokens, jar.currentRoundId).slice(-8) as t (t.id)}
+              <!-- Visible, so the strip cannot be emptied by tokens orphaned in
+                   an old theme quietly eating the eight slots. -->
+              {#each visibleTokens(jar, jarTokens).slice(-8) as t (t.id)}
                 {@const d = def.tokens.find((x) => x.id === t.tokenTypeId)}
                 {#if d}<TokenGlyph token={d} size={20} />{/if}
               {/each}

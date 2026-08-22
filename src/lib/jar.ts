@@ -4,10 +4,15 @@
  * Nothing here imports Svelte or touches storage. Test these directly rather
  * than through the DOM.
  *
- * The central idea: **progress is the summed `value` of a round's live
+ * The central idea: **progress is the summed `value` of a round's *visible*
  * tokens**, compared against `jar.target`. Count themes give every token
  * `value: 1`, so the same arithmetic serves "14 / 20 tokens" and
  * "£6.50 / £10.00". There is deliberately no second code path for money.
+ *
+ * Visible, not merely live, because a theme change can leave a token naming a
+ * type that no longer exists — no value, no silhouette, no label. See
+ * `visibleTokens`, and note that `liveTokens` answers a narrower question that
+ * only this module should be asking.
  */
 
 import { theme, tokenType, tokenTypeAnywhere } from './themes.ts';
@@ -112,11 +117,14 @@ export function projectedTokenCount(themeId: ThemeId, target: number): number {
  * did not catch anything. The number was never wrong; the unit moved out from
  * under it.
  *
- * What is preserved is the number of times a grown-up has to add a token, since
- * that is the thing a child actually experiences: ten treats becomes £5.00,
- * because £5.00 is ten 50p coins. Round-trips exactly, and because the projected
- * token count is unchanged by construction, a valid target cannot be converted
- * into an invalid one — no clamping needed.
+ * What is preserved is `projectedTokenCount` — how many treats the jar holds
+ * when every one of them is the theme's cheapest, which is the closest thing to
+ * "how much effort is this" that survives a change of unit. Ten treats becomes
+ * £5.00, because £5.00 is ten 50p coins. Read it as a worst-case capacity, not
+ * as a count of adds actually made: a £10.00 jar measures as twenty even if two
+ * £5 notes would fill it. Round-trips exactly, and because that count is
+ * unchanged by construction, a valid target cannot be converted into an invalid
+ * one — no clamping needed.
  *
  * Note there is no branch on `progress.mode` here, and there must not be (rule
  * 1). Count themes price every token at 1, so for count → count the arithmetic

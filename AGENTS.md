@@ -63,19 +63,36 @@ Validating it does not catch a change — a 10-treat jar reinterpreted as `£0.1
 is a perfectly legal target that one 50p coin clears. `retargetForTheme`
 converts it instead, preserving the number of token-adds, without asking what
 mode either theme is in: count themes price a token at 1, so count → count is
-the identity.
+the identity. Read `projectedTokenCount` as a worst-case capacity — how many
+treats the jar holds when every one is the cheapest the theme offers — not as a
+tally of adds actually made: a £10.00 jar measures as twenty even if two £5
+notes would fill it.
 
 *The token half.* Every token keeps the `tokenTypeId` it was minted with, so
 after a change its type may name nothing at all. Such a token has no value, no
 silhouette and no label — `progress` cannot count it and the pile cannot draw
-it. **`visibleTokens` is therefore the only honest answer to "what is in this
-jar", and `liveTokens` is not.** `liveTokens` answers "what was added to this
-round", which the history needs and almost nothing else does. Reach for the
-wrong one and you get the bug this rule exists to prevent: a count, a bar and a
-hidden token list all insisting a jar holds thirty treats that the canvas draws
-as empty. The one deliberate exception is `clearTokensForThemeChange`, which
-clears `liveTokens` because "start again" must empty the round completely —
-an orphan left behind reappears if the jar is ever switched back.
+it. **`visibleTokens` is the only honest answer to "what is in this jar", and
+`liveTokens` is not.**
+
+There are three lists, and picking the wrong one is how this goes wrong:
+
+- **`liveTokens`** — belongs to the round, not removed, not tombstoned. A
+  membership primitive, and nothing outside `jar.ts` should need it: every
+  caller that reached for it was really asking one of the other two questions.
+- **`visibleTokens`** — live *and* resolvable in the jar's current theme. What
+  the pile draws, what `progress` counts, and what anything the grown-up sees
+  must be built from.
+- **all tokens** — what `history` walks, deliberately including removed ones
+  and earlier rounds, because it is an event archive rather than a view of the
+  jar. It is not `liveTokens`, and it never was.
+
+Reach for the wrong one and you get the bug this rule exists to prevent: a
+count, a bar and a hidden token list all insisting a jar holds thirty treats
+that the canvas draws as empty.
+
+The one deliberate exception is `clearTokensForThemeChange`, which clears
+`liveTokens` because "start again" must empty the round completely — an orphan
+left behind reappears if the jar is ever switched back.
 
 *Neither half may move without the other.* `store.retheme` writes the jar patch
 and its token edits under one timestamp, because two writes let a device
@@ -91,10 +108,15 @@ rule 1 survives.
 Three things about that conversion are load-bearing and look arbitrary:
 
 - **One token in, one token out.** Rewriting `tokenTypeId` is an ordinary edit
-  that merges by `lastModified`, so two devices converting the same jar
-  converge. Minting replacements — which is what preserving the progress
-  *fraction* across a mode change would require — gives each device fresh ids,
-  `mergeById` keeps both sets, and the child's progress doubles.
+  that merges by `lastModified`, so two devices converting the same jar settle
+  on the later conversion. Minting replacements — which is what preserving the
+  progress *fraction* across a mode change would require — gives each device
+  fresh ids, `mergeById` keeps both sets, and the child's progress doubles.
+  (LWW is not a convergence guarantee at equal timestamps: `mergeById` keeps
+  the local entity on a tie, so two conversions in the same millisecond leave
+  the devices disagreeing until one of them edits again. Millisecond ties
+  between two grown-ups editing the same jar are not worth a vector clock, but
+  do not write "converges" in a comment as though it were proven.)
 - **The default rate is the new theme's cheapest token, not rank-for-rank.**
   Rank-for-rank is the obvious choice, is what `switchTheme` does to `reasons`,
   and is wrong: it prices eight dinosaurs at £17.00 against the £10.00 target
