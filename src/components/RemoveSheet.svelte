@@ -19,7 +19,7 @@
   // not in the jar as far as the pile and the progress bar are concerned, so
   // offering it here would let a grown-up "take out" something nobody can see,
   // to no visible effect.
-  const live = $derived(
+  const visible = $derived(
     visibleTokens(jar, tokens).slice().sort((a, b) => b.addedUtc.localeCompare(a.addedUtc)),
   );
 
@@ -31,7 +31,7 @@
 </script>
 
 <Sheet {open} title="Take a token out" {onclose}>
-  {#if live.length === 0}
+  {#if visible.length === 0}
     <p class="empty">The jar is empty — there is nothing to take out.</p>
   {:else}
     <label class="note">
@@ -41,7 +41,7 @@
 
     <p class="heading" id="which">Which token?</p>
     <ul aria-labelledby="which">
-      {#each live as t (t.id)}
+      {#each visible as t (t.id)}
         {@const def = tokenType(jar.themeId, t.tokenTypeId)}
         <li>
           <span class="who">
