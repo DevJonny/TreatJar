@@ -39,28 +39,85 @@ src/App.svelte      routing and wiring
 src/lib/store.svelte.ts   the single source of truth
 ```
 
-### Nine things that will bite you
+### Ten things that will bite you
 
 **1. Progress is one calculation, not two.** Dinosaur/space/sweets jars count
 tokens; money jars count pence. There is no branch for this. Every token type
 carries a `value`, count themes set it to `1`, and progress is the summed value
-of the round's live tokens against `jar.target`. If you find yourself writing
-`if (theme.progress.mode === 'value')` anywhere outside *formatting*, stop —
-you are about to grow a second code path that will drift.
+of the round's **visible** tokens against `jar.target` — see rule 2. If you
+find yourself writing `if (theme.progress.mode === 'value')` anywhere outside
+*formatting*, stop — you are about to grow a second code path that will drift.
 
 Money is **integer pence everywhere**. `£0.10 + £0.20 !== £0.30` in binary
 floating point, and a jar that can never quite reach its target is a bug a
 child notices before you do. `progress.format` in `themes.ts` is the only place
 a number becomes text.
 
-The corollary is that **`jar.target` is a bare number whose unit lives in the
-theme**, so changing the theme reinterprets it. Validating it does not catch
-this — a 10-treat jar reinterpreted as `£0.10` is a perfectly legal target that
-one 50p coin clears. `retargetForTheme` converts it instead, preserving the
-number of token-adds, and it does so without asking what mode either theme is
-in: count themes price a token at 1, so count → count is the identity.
+**2. A theme change reinterprets the whole jar, and both halves must agree.**
+This is the single richest source of bugs in this codebase. A theme is not a
+skin: it supplies the unit the target is counted in *and* the types the tokens
+are made of, so switching it silently restates everything the jar means.
 
-**2. The merge is per-token, and that is the whole point.** `mergeById` merges
+*The target half.* `jar.target` is a bare number whose unit lives in the theme.
+Validating it does not catch a change — a 10-treat jar reinterpreted as `£0.10`
+is a perfectly legal target that one 50p coin clears. `retargetForTheme`
+converts it instead, preserving the number of token-adds, without asking what
+mode either theme is in: count themes price a token at 1, so count → count is
+the identity.
+
+*The token half.* Every token keeps the `tokenTypeId` it was minted with, so
+after a change its type may name nothing at all. Such a token has no value, no
+silhouette and no label — `progress` cannot count it and the pile cannot draw
+it. **`visibleTokens` is therefore the only honest answer to "what is in this
+jar", and `liveTokens` is not.** `liveTokens` answers "what was added to this
+round", which the history needs and almost nothing else does. Reach for the
+wrong one and you get the bug this rule exists to prevent: a count, a bar and a
+hidden token list all insisting a jar holds thirty treats that the canvas draws
+as empty. The one deliberate exception is `clearTokensForThemeChange`, which
+clears `liveTokens` because "start again" must empty the round completely —
+an orphan left behind reappears if the jar is ever switched back.
+
+*Neither half may move without the other.* `store.retheme` writes the jar patch
+and its token edits under one timestamp, because two writes let a device
+syncing mid-change land a jar in one theme holding tokens converted for
+another.
+
+**The exchange rate is asked for, never derived.** A dinosaur has no
+denomination, so count → value means inventing a rate and value → count means
+throwing one away. `JarConfigForm` asks; `TokenMapping` carries the answer. The
+happy consequence is that a *supplied* rate needs no branch on either mode, so
+rule 1 survives.
+
+Three things about that conversion are load-bearing and look arbitrary:
+
+- **One token in, one token out.** Rewriting `tokenTypeId` is an ordinary edit
+  that merges by `lastModified`, so two devices converting the same jar
+  converge. Minting replacements — which is what preserving the progress
+  *fraction* across a mode change would require — gives each device fresh ids,
+  `mergeById` keeps both sets, and the child's progress doubles.
+- **The default rate is the new theme's cheapest token, not rank-for-rank.**
+  Rank-for-rank is the obvious choice, is what `switchTheme` does to `reasons`,
+  and is wrong: it prices eight dinosaurs at £17.00 against the £10.00 target
+  `retargetForTheme` just computed, completing the jar on save. Pricing every
+  token at `smallest` is the same rule the target uses, so the bar does not
+  move. Note this preserves treats *added*, which equals the bar only out of a
+  count theme — four coins are 85% of a £10.00 jar but four things. The form
+  shows the projected reading rather than pretending otherwise.
+- **A theme change can un-orphan tokens as well as orphan them.** Switch a
+  dinosaur jar holding a stranded 50p *to* money and that coin resolves again
+  and starts counting, though nothing converted it. So "what is in the jar" and
+  "what will each token be worth afterwards" are different questions, and
+  `projectedProgress` must answer the second or it under-reports by exactly the
+  treats the jar is about to recover.
+
+Finally, **`mintedAs` is a memory, not a second identity.** Converting rewrites
+`tokenTypeId` — correctly, the contents really are coins now — which would also
+rewrite the past, restating a T-Rex earned in August as "50p added". `history`
+reads `mintedAs` so the log names what happened while the jar counts what it
+holds. Nothing else may read it: if the pile or `progress` did, the jar would
+start counting treats it cannot draw.
+
+**3. The merge is per-token, and that is the whole point.** `mergeById` merges
 individual entities, not whole jars. Mum's phone and Dad's phone both add
 tokens on the same evening; whole-jar last-write-wins would silently drop one.
 Because every add mints a fresh id, concurrent adds are not a conflict at all —
@@ -70,19 +127,28 @@ genuinely right.
 This is the one place this codebase deliberately diverges from the DiceCalc
 sync layer it was ported from. Do not "simplify" it back.
 
-**3. Removal is a tombstone; cashing in does not delete.** A removed token
+**4. Removal is a tombstone; cashing in does not delete.** A removed token
 keeps its record and gains a `removal`. A completed round is closed, not
 emptied. Both exist so that history is a *pure function of the token list* —
 there is no second collection to fall out of step, and a removal merges like
 any other edit. `pruneRounds` is what stops this growing forever.
 
-**4. Body positions are never persisted; seeds are.** A token stores a `seed`
+`RemovalKind` is child-visible wording, so pick it honestly. `undo` renders as
+"removed (mistake)" and `consequence` as "taken away"; emptying a jar because
+its theme changed is neither, and reusing one of them writes thirty
+punishments she never earned into her own history. That is what `themeChange`
+is for. Adding a kind widens a union that is already in storage, so
+`storage.ts` coerces anything it does not recognise to `undo` — a file written
+by a newer client loads here with slightly wrong wording rather than losing
+the token.
+
+**5. Body positions are never persisted; seeds are.** A token stores a `seed`
 and the pile is re-derived from it. Persisting coordinates would restore
 tokens outside the glass on a different-sized screen. On load the world is
 settled *headlessly* and then drawn once, so the jar appears already full
 instead of raining tokens down the screen on every open.
 
-**5. Nothing may come to rest where it cannot be seen.** This is the failure
+**6. Nothing may come to rest where it cannot be seen.** This is the failure
 mode this file exists to warn you about, because the UI never shows it: the
 count is right, the progress bar is right, and only the pile is short.
 
@@ -111,12 +177,12 @@ Consequently `computeTokenSize()` must run **before** `buildWalls()`, since the
 lid's height derives from token size. `tests/physics.test.ts` asserts every
 token settles inside the visible box; keep those bounds tight.
 
-**6. The render loop stops when every body is asleep, and must keep doing so.**
+**7. The render loop stops when every body is asleep, and must keep doing so.**
 `enableSleeping` is on and the rAF loop exits at `isAtRest()`. A settled jar
 costs zero frames. Remove that and the app burns battery forever while showing
 a completely static picture.
 
-**7. Never rely on ResizeObserver alone for the canvas size.** Its callbacks
+**8. Never rely on ResizeObserver alone for the canvas size.** Its callbacks
 are delivered as part of the rendering steps — the same pipeline as
 `requestAnimationFrame`. Anything that suppresses those leaves the canvas at
 its 300x150 default with nothing ever drawn in it. `JarCanvas` measures once
@@ -133,7 +199,7 @@ happened here:
   effect created when that block renders, which lands *after* the effect that
   wants to size the canvas. The markup is rendered unconditionally.
 
-**8. A jar at its target must look full.** That is the reward: a child who can
+**9. A jar at its target must look full.** That is the reward: a child who can
 see the pile is near the top does not have to read the progress bar. Token size
 is therefore derived from the target — ten treats are drawn big, a hundred
 small — by `tokenSizeFor`, working forwards from the pile: `capacity` tokens,
@@ -153,10 +219,10 @@ These constants are calibrated against measured pile heights, not derived.
 If you change one, re-measure: `tests/physics.test.ts` settles real piles and
 asserts they reach the top and never spill.
 
-**9. The glass and the walls are the same jar.** `jarShape` owns the silhouette;
+**10. The glass and the walls are the same jar.** `jarShape` owns the silhouette;
 `cavity` is the only part tokens occupy and is what the world is built from.
 The neck and shoulders are drawn *above* the pile, never around it — piling
-into a curve needs walls that follow it, and see rule 5. The canvas covers the
+into a curve needs walls that follow it, and see rule 6. The canvas covers the
 whole jar and is clipped to `inside`, so a token at the brim shows through the
 shoulders instead of being sliced off at the cavity's edge.
 
@@ -165,7 +231,13 @@ shoulders instead of being sliced off at the cavity's edge.
 The canvas is invisible to assistive tech, so every jar renders a parallel text
 story: a `role="img"` label on the glass, an `aria-live` region announcing each
 change, a visually-hidden list of the tokens, and the progress as real text
-next to the bar. Nothing may be reachable only by looking at the pile.
+next to the bar. Nothing may be reachable only by looking at the pile — and,
+just as much the point, nothing may be announced that the pile does not show.
+Both come off `visibleTokens` for exactly that reason (rule 2).
+
+Button toggles here are `aria-pressed`, not `role="radio"`. The radio pattern
+promises arrow-key roving focus, and a promise assistive tech acts on is worse
+than the plainer control that would have described the thing accurately.
 
 Beyond that: WCAG AA contrast, 48px touch targets (`--tap`), `100dvh` never
 `100vh`, and every token type identified by **silhouette and text label**, not
