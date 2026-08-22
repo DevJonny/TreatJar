@@ -311,3 +311,58 @@ describe('the jar is fitted to its target', () => {
     world.destroy();
   });
 });
+
+/**
+ * Changing a jar's theme changes what a token IS — its shape, its colour, its
+ * size and, for a money jar, its value. None of that can be swapped on a body
+ * that already exists, so the world has to be told, and the pile rebuilt.
+ * Without this the glass keeps showing dinosaurs in a jar the rest of the app
+ * has already agreed is full of coins.
+ */
+describe('re-theming a jar', () => {
+  it('rebuilds the pile with the new theme', () => {
+    const list = tokens(8, ['trex', 'stego']);
+    const world = new JarWorld({ width: W, height: H, themeId: 'dinosaurs', capacity: 8 });
+    world.setTokens(list);
+    world.settle();
+    expect(world.positions()).toHaveLength(8);
+
+    world.setTheme('money');
+    world.setTokens([...list, { id: 'coin', tokenTypeId: 'coin-200', seed: 7 }]);
+    world.settle(400);
+
+    // The dinosaurs are gone — in a money jar they are worth nothing, and
+    // `progress` already treats them that way. Only the coin is left.
+    expect(world.positions().map((p) => p.id)).toEqual(['coin']);
+    expectInsideGlass(world);
+    world.destroy();
+  });
+
+  it('resizes tokens to the new theme, since footprints differ', () => {
+    const world = new JarWorld({ width: W, height: H, themeId: 'dinosaurs', capacity: 20 });
+    world.setTokens(tokens(20, ['trex', 'stego', 'raptor', 'bone']));
+    world.settle();
+    const before = world.tokenPixels;
+
+    world.setTheme('money');
+
+    expect(world.tokenPixels).not.toBeCloseTo(before, 1);
+    world.destroy();
+  });
+
+  it('does nothing when the theme has not changed', () => {
+    const list = tokens(6, ['trex']);
+    const world = new JarWorld({ width: W, height: H, themeId: 'dinosaurs', capacity: 6 });
+    world.setTokens(list);
+    world.settle();
+    const before = new Map(world.positions().map((p) => [p.id, p.y]));
+
+    world.setTheme('dinosaurs');
+
+    // A no-op rebuild would scramble a settled pile for nothing.
+    for (const [id, y] of before) {
+      expect(world.positions().find((p) => p.id === id)!.y).toBe(y);
+    }
+    world.destroy();
+  });
+});

@@ -489,6 +489,27 @@ export class JarWorld {
   }
 
   /**
+   * Re-theme the jar in place.
+   *
+   * Token shapes, colours and footprints all come from the theme, and none of
+   * them can be swapped on a body that already exists — so the pile is thrown
+   * away and built again from its seeds. Tokens whose type does not exist in
+   * the new theme simply do not come back, which is the same thing `progress`
+   * does with them: an old dinosaur is worth nothing in a money jar, and it
+   * would be worse to show one that no longer counts.
+   */
+  setTheme(themeId: ThemeId): void {
+    if (themeId === this.opts.themeId) return;
+    this.opts.themeId = themeId;
+    this.prepared.clear();
+    this.paths.clear();
+    this.prepareTypes();
+    this.computeTokenSize();
+    this.buildWalls();
+    this.rebuild();
+  }
+
+  /**
    * Re-derive everything that depends on the jar's size or target. Bodies are
    * rebuilt only when the token size actually moved, so a resize that rounds to
    * the same size leaves a settled pile alone.

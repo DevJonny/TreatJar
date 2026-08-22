@@ -131,11 +131,12 @@
       if (!world) {
         world = new JarWorld({ width: cavity.width, height: cavity.height, themeId: t, capacity: cap });
       } else {
-        // A resize or a new target changes how big a token is drawn, so the
-        // pile is rebuilt from its seeds and settled again rather than left
-        // hanging where the old walls used to be.
+        // A resize, a new target or a new theme all change how a token is
+        // drawn, so the pile is rebuilt from its seeds and settled again
+        // rather than left hanging where the old walls used to be.
         world.resize(cavity.width, cavity.height);
         world.setCapacity(cap);
+        world.setTheme(t);
       }
       world.setTokens(tokens);
       world.settle();
@@ -157,6 +158,10 @@
 
       world.setTokens(list, { animateNew: added });
 
+      // reducedMotion is read here rather than tracked: what matters is its
+      // value at the moment a treat is added, which is exactly what an
+      // untracked read gives. Tracking it would restart this for a setting
+      // change that has nothing to reconcile.
       if (added && !reducedMotion) {
         world.start(paint);
       } else {
