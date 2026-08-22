@@ -124,6 +124,9 @@ function reviveToken(v: unknown): Token | null {
     seed: typeof t['seed'] === 'number' ? t['seed'] : hashString(t['id']),
     lastModified: iso(t['lastModified']),
     ...(removal ? { removal } : {}),
+    // Omitted rather than nulled when absent, so an unconverted token stays
+    // byte-identical through a load/save round trip and does not churn sync.
+    ...(typeof t['mintedAs'] === 'string' ? { mintedAs: t['mintedAs'] } : {}),
     ...(t['isDeleted'] === true ? { isDeleted: true as const } : {}),
   };
 }
