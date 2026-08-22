@@ -3,7 +3,7 @@
   import TokenGlyph from './TokenGlyph.svelte';
   import { THEMES, theme } from '../lib/themes.ts';
   import {
-    defaultTokenMapping, liveTokens, projectedProgress, retargetForTheme, validateTarget,
+    defaultTokenMapping, projectedProgress, retargetForTheme, validateTarget, visibleTokens,
     TOKEN_COUNT_MAX, type TokenMapping,
   } from '../lib/jar.ts';
   import { THEME_IDS, type Jar, type ThemeId, type Token } from '../lib/types.ts';
@@ -54,7 +54,11 @@
    * never owned is worth, and convert tokens that are still dinosaurs.
    */
   const savedThemeId = untrack(() => jar?.themeId ?? null);
-  const inJar = $derived(jar ? liveTokens(tokens, jar.currentRoundId) : []);
+  // `visibleTokens`, not `liveTokens`. A jar saved before conversion existed
+  // can still hold tokens orphaned by an older theme change; those are not
+  // drawn and not counted, so telling the grown-up the jar holds eight treats
+  // while the canvas shows five is the exact divergence this must not repeat.
+  const inJar = $derived(jar ? visibleTokens(jar, tokens) : []);
   const themeChanged = $derived(savedThemeId !== null && themeId !== savedThemeId);
   /** The question only arises for a jar with something in it to lose. */
   const mustDecide = $derived(themeChanged && inJar.length > 0);
@@ -158,13 +162,17 @@
         are worth now — or start the jar again.
       </p>
 
-      <div class="choices" role="radiogroup" aria-label="What happens to the treats already in the jar">
+      <!-- `aria-pressed`, matching the theme picker and the target presets above.
+           `role="radio"` promises arrow-key roving focus that these buttons do
+           not implement, and a promise assistive tech acts on is worse than the
+           plainer control it would have described accurately. -->
+      <div class="choices">
         <button
-          type="button" role="radio" aria-checked={disposition === 'convert'}
+          type="button" aria-pressed={disposition === 'convert'}
           class:selected={disposition === 'convert'} onclick={() => (disposition = 'convert')}
         >Keep them</button>
         <button
-          type="button" role="radio" aria-checked={disposition === 'reset'}
+          type="button" aria-pressed={disposition === 'reset'}
           class:selected={disposition === 'reset'} onclick={() => (disposition = 'reset')}
         >Start again</button>
       </div>

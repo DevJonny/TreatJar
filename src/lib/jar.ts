@@ -203,9 +203,13 @@ export function convertTokens(
   mapping: TokenMapping,
   at: string = nowIso(),
 ): Token[] {
-  const live = new Set(liveTokens(tokens, jar.currentRoundId).map((t) => t.id));
+  // Visible, not merely live: a jar saved before this feature existed may still
+  // hold tokens orphaned by an older theme change. They are unmappable anyway —
+  // the mapping is keyed by the CURRENT theme's types — but saying so here
+  // means a hand-built mapping cannot reach them by accident either.
+  const convertible = new Set(visibleTokens(jar, tokens).map((t) => t.id));
   return tokens.map((t) => {
-    if (!live.has(t.id)) return t;
+    if (!convertible.has(t.id)) return t;
     const next = mapping[t.tokenTypeId];
     if (next === undefined || next === t.tokenTypeId) return t;
     return {
@@ -232,6 +236,12 @@ export function clearTokensForThemeChange(
   reasonText: string | null = null,
   at: string = nowIso(),
 ): Token[] {
+  // `liveTokens` here, unlike everywhere else in this file, and on purpose.
+  // "Start again" means the round starts empty, so it must also clear tokens
+  // orphaned by an older theme change — invisible, uncounted, but still in the
+  // round, and still able to reappear if the jar is ever switched back to the
+  // theme that minted them. Emptying only what is currently drawable would
+  // leave a jar that reads zero and is not.
   const live = new Set(liveTokens(tokens, jar.currentRoundId).map((t) => t.id));
   // Normalised exactly as `removeToken` does it. A whitespace-only reason that
   // survives to storage renders as a blank line in the history, under an entry
@@ -259,8 +269,19 @@ export function projectedProgress(
   to: ThemeId,
   mapping: TokenMapping,
 ): number {
+  // Every live token, valued at whatever it will be worth once the theme has
+  // changed — which is not the same question as what is in the jar now.
+  //
+  // A token converts if the jar can currently see it. One it cannot see is an
+  // orphan from an older theme change, and `convertTokens` leaves it alone —
+  // but leaving it alone is not the same as it staying worthless, because the
+  // theme being switched TO may be the very one that minted it. Switch a
+  // dinosaur jar holding a stranded 50p to money and that coin resolves again
+  // and starts counting. Summing only the convertible tokens would quietly
+  // under-report the jar by exactly the treats it is about to recover.
+  const convertible = new Set(visibleTokens(jar, tokens).map((t) => t.id));
   return liveTokens(tokens, jar.currentRoundId).reduce((sum, t) => {
-    const next = mapping[t.tokenTypeId];
+    const next = convertible.has(t.id) ? mapping[t.tokenTypeId] : t.tokenTypeId;
     return sum + (next === undefined ? 0 : (tokenType(to, next)?.value ?? 0));
   }, 0);
 }
