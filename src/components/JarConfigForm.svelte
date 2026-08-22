@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import TokenGlyph from './TokenGlyph.svelte';
   import { THEMES, theme } from '../lib/themes.ts';
-  import { validateTarget, TOKEN_COUNT_MAX } from '../lib/jar.ts';
+  import { retargetForTheme, validateTarget, TOKEN_COUNT_MAX } from '../lib/jar.ts';
   import { THEME_IDS, type Jar, type ThemeId } from '../lib/types.ts';
 
   interface Draft { label: string; tokenTypeId: string }
@@ -38,18 +38,23 @@
    * Switching theme rewrites the reasons' token types. Leaving them pointing at
    * the old theme's ids would give every shortcut a blank glyph and add tokens
    * the jar cannot draw.
+   *
+   * The target has to be converted too, and *not* merely validated: its unit
+   * comes from the theme, so the same number means something different
+   * afterwards. See `retargetForTheme`. `previous` is captured before the
+   * reassignment because both conversions read the theme being left behind.
    */
   function switchTheme(next: ThemeId) {
-    const before = theme(themeId).tokens;
+    const previous = themeId;
+    const before = theme(previous).tokens;
     const after = THEMES[next].tokens;
     reasons = reasons.map((r) => {
       const i = before.findIndex((t) => t.id === r.tokenTypeId);
       return { ...r, tokenTypeId: after[i >= 0 ? i : 0]!.id };
     });
     themeId = next;
-    if (target !== null && !validateTarget(next, target).ok) {
-      target = THEMES[next].progress.targetPresets[1]!;
-    }
+    // null is an empty or half-typed field, which is the user's to finish.
+    if (target !== null) target = retargetForTheme(previous, next, target);
   }
 
   function addReason() {

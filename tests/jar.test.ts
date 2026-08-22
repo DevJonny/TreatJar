@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addToken, closeRound, createJar, formatProgress, formatTarget, history, isComplete,
   lastAddedToken, liveTokens, progress, progressFraction, projectedTokenCount, pruneRounds,
-  removeToken, restoreToken, validateTarget, TOKEN_COUNT_MAX,
+  removeToken, restoreToken, retargetForTheme, validateTarget, TOKEN_COUNT_MAX,
 } from '../src/lib/jar.ts';
 import type { Round, Token } from '../src/lib/types.ts';
 
@@ -162,6 +162,53 @@ describe('target validation bounds the physics world', () => {
     const warn = validateTarget('dinosaurs', 100);
     expect(warn).toMatchObject({ ok: true, warn: true });
     expect(validateTarget('dinosaurs', TOKEN_COUNT_MAX + 1).ok).toBe(false);
+  });
+});
+
+describe('a target changes units when the theme changes', () => {
+  it('leaves the target alone when the units do not move', () => {
+    // All three count themes price a token at 1, so the number still means
+    // what it said. A hand-typed target must survive this untouched.
+    expect(retargetForTheme('dinosaurs', 'space', 12)).toBe(12);
+    expect(retargetForTheme('space', 'sweets', 30)).toBe(30);
+    expect(retargetForTheme('dinosaurs', 'dinosaurs', 17)).toBe(17);
+  });
+
+  it('converts count to money as the same number of token-adds', () => {
+    // The bug: 10 treats used to stay the raw number 10 and be read as 10p,
+    // a target one 50p coin clears. Ten treats is ten 50p coins: £5.00.
+    expect(retargetForTheme('dinosaurs', 'money', 10)).toBe(500);
+    expect(retargetForTheme('dinosaurs', 'money', 15)).toBe(750);
+    expect(retargetForTheme('dinosaurs', 'money', 30)).toBe(1500);
+  });
+
+  it('converts money back to a count of the smallest coin', () => {
+    expect(retargetForTheme('money', 'dinosaurs', 1000)).toBe(20);
+    expect(retargetForTheme('money', 'sweets', 500)).toBe(10);
+  });
+
+  it('round-trips a target through a theme change and back', () => {
+    for (const target of [10, 15, 20, 30, 12, 7]) {
+      const asMoney = retargetForTheme('dinosaurs', 'money', target);
+      expect(retargetForTheme('money', 'dinosaurs', asMoney)).toBe(target);
+    }
+  });
+
+  it('cannot turn a valid target into one the jar cannot hold', () => {
+    // Effort is preserved, so the projected body count is preserved with it.
+    // This is why the conversion needs no clamping.
+    for (const target of [10, 15, 20, 30, 80, TOKEN_COUNT_MAX]) {
+      expect(projectedTokenCount('money', retargetForTheme('dinosaurs', 'money', target)))
+        .toBe(projectedTokenCount('dinosaurs', target));
+      expect(validateTarget('money', retargetForTheme('dinosaurs', 'money', target)).ok)
+        .toBe(validateTarget('dinosaurs', target).ok);
+    }
+  });
+
+  it('falls back to the new theme default when there is no target to carry', () => {
+    expect(retargetForTheme('dinosaurs', 'money', 0)).toBe(1000);
+    expect(retargetForTheme('dinosaurs', 'money', -5)).toBe(1000);
+    expect(retargetForTheme('money', 'dinosaurs', Number.NaN)).toBe(15);
   });
 });
 

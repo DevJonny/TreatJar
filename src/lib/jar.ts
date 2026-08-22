@@ -70,10 +70,43 @@ export function formatTarget(jar: Jar): string {
  * config form gates on this, and a test pins the thresholds, so a future theme
  * cannot reintroduce the problem quietly.
  */
+const smallestValue = (themeId: ThemeId): number =>
+  Math.min(...theme(themeId).tokens.map((t) => t.value));
+
 export function projectedTokenCount(themeId: ThemeId, target: number): number {
-  const smallest = Math.min(...theme(themeId).tokens.map((t) => t.value));
+  const smallest = smallestValue(themeId);
   if (smallest <= 0) return Number.POSITIVE_INFINITY;
   return Math.ceil(target / smallest);
+}
+
+/**
+ * Carry a target across a theme change, in units of *effort*.
+ *
+ * The trap this exists for: a target is a bare number whose unit lives in the
+ * theme, so changing the theme silently reinterprets it. A 10-treat jar became
+ * "£0.10" — a legal target, cleared by a single 50p, which is why validating it
+ * did not catch anything. The number was never wrong; the unit moved out from
+ * under it.
+ *
+ * What is preserved is the number of times a grown-up has to add a token, since
+ * that is the thing a child actually experiences: ten treats becomes £5.00,
+ * because £5.00 is ten 50p coins. Round-trips exactly, and because the projected
+ * token count is unchanged by construction, a valid target cannot be converted
+ * into an invalid one — no clamping needed.
+ *
+ * Note there is no branch on `progress.mode` here, and there must not be (rule
+ * 1). Count themes price every token at 1, so for count → count the arithmetic
+ * is the identity and a hand-typed 12 survives as 12.
+ */
+export function retargetForTheme(from: ThemeId, to: ThemeId, target: number): number {
+  const fallback = theme(to).progress.targetPresets[1]!;
+  if (from === to) return target;
+  if (!Number.isFinite(target) || target <= 0) return fallback;
+
+  const adds = projectedTokenCount(from, target);
+  const smallest = smallestValue(to);
+  if (!Number.isFinite(adds) || smallest <= 0) return fallback;
+  return adds * smallest;
 }
 
 export const TOKEN_COUNT_WARN = 80;
