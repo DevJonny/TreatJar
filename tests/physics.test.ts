@@ -134,3 +134,38 @@ describe('the world reconciles rather than rebuilding', () => {
     world.destroy();
   });
 });
+
+/**
+ * The drop is the moment the whole app exists for: a grown-up taps "add", and a
+ * token falls into the jar. What makes it read as a drop rather than as a token
+ * appearing from nowhere is WHERE it starts — over the mouth, above the glass —
+ * so that is what is pinned here. Everything after release is gravity's job.
+ */
+describe('a token added by hand drops in through the mouth', () => {
+  const seeds = [1, 7, 99, 12345, 987654321];
+
+  it.each(seeds)('starts above the glass and over the middle of it (seed %i)', (seed) => {
+    const initial = tokens(6, ['trex', 'stego']);
+    const world = build(initial);
+
+    world.setTokens([...initial, { id: 'drop', tokenTypeId: 'raptor', seed }], { animateNew: true });
+    const dropped = world.positions().find((p) => p.id === 'drop')!;
+
+    // Above the glass: the release itself is off-screen, so the token enters
+    // view already falling instead of blinking into existence mid-jar.
+    expect(dropped.y).toBeLessThan(0);
+    // And over the mouth rather than anywhere along the rim.
+    expect(Math.abs(dropped.x - W / 2)).toBeLessThanOrEqual(W * 0.2);
+    world.destroy();
+  });
+
+  it('lands in the pile like any other token', () => {
+    const initial = tokens(6, ['trex', 'stego']);
+    const world = build(initial);
+    world.setTokens([...initial, { id: 'drop', tokenTypeId: 'raptor', seed: 5150 }], { animateNew: true });
+    world.settle(400);
+    expectInsideGlass(world);
+    expect(world.positions()).toHaveLength(7);
+    world.destroy();
+  });
+});
