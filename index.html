@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#1b1a17" />
+
+    <!-- iOS reads none of this from the manifest when a page is added to the
+         home screen, so the icon has to be linked here or it saves a
+         screenshot of the page instead. The PNG was already being built and
+         precached (`includeAssets` in vite.config.ts) — it was simply never
+         referenced. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Treat Jar" />
+    <!-- `black`, not `black-translucent`: translucent draws the page behind the
+         status bar, and only the BOTTOM inset is padded for (see the sections
+         in JarView/JarList). The header would sit under the clock. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+
     <title>Treat Jar</title>
   </head>
   <body>
