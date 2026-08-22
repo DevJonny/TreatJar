@@ -9,6 +9,7 @@
   import ShareSheet from './components/ShareSheet.svelte';
   import Celebration from './components/Celebration.svelte';
   import { store } from './lib/store.svelte.ts';
+  import { install } from './lib/install.svelte.ts';
   import { readRoute, routeToHash, shareUrl, type Route } from './lib/hash.ts';
   import { decodeShare } from './lib/share.ts';
   import { encodeShare } from './lib/share.ts';
@@ -46,7 +47,14 @@
     const onHash = () => (route = readRoute());
     window.addEventListener('hashchange', onHash);
     store.initSync();
-    return () => window.removeEventListener('hashchange', onHash);
+    // Started here rather than when Settings opens: `beforeinstallprompt`
+    // fires once, early, and is not repeated — listen late and the offer has
+    // already come and gone.
+    const stopInstall = install.start();
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+      stopInstall();
+    };
   });
 
   // Any open overlay belongs to the screen that opened it. Leaving one up

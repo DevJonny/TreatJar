@@ -1,6 +1,7 @@
 <script lang="ts">
   import Sheet from './Sheet.svelte';
   import SyncStatusBar from './SyncStatusBar.svelte';
+  import { install } from '../lib/install.svelte.ts';
   import type { MotionChoice, Preferences, ThemeChoice } from '../lib/prefs.ts';
   import type { SyncStatus } from '../lib/types.ts';
 
@@ -52,6 +53,30 @@
     </div>
   </fieldset>
 
+  <!-- Nothing is rendered when there is nothing to offer, rather than a section
+       explaining that installing is unavailable. -->
+  {#if install.offer !== 'none'}
+    <fieldset>
+      <legend>Home screen</legend>
+      {#if install.offer === 'installed'}
+        <p class="hint">Treat Jar is on your home screen. It works without a signal.</p>
+      {:else if install.offer === 'prompt'}
+        <p class="hint">Keep Treat Jar on your home screen — it opens full screen and works without a signal.</p>
+        <button class="install" onclick={() => install.prompt()}>Install Treat Jar</button>
+      {:else}
+        <!-- iOS has no install API at all, so the steps are the feature. -->
+        <p class="hint">To keep Treat Jar on your home screen:</p>
+        <ol class="steps">
+          <li>Tap the Share button in the browser bar.</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong>.</li>
+        </ol>
+      {/if}
+      <!-- The button disappearing is not an announcement. -->
+      <p class="visually-hidden" aria-live="polite">{install.said}</p>
+    </fieldset>
+  {/if}
+
   <fieldset>
     <legend>Google Drive</legend>
     {#if syncConfigured}
@@ -77,5 +102,7 @@
   button { min-height: var(--tap); padding: 0 14px; border: 2px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
   .selected { border-color: var(--text-primary); font-weight: 650; }
   .danger { margin-top: 10px; color: var(--danger); border-color: currentColor; width: 100%; }
+  .install { width: 100%; font-weight: 650; }
+  .steps { margin: 0; padding-left: 1.2em; font-size: 0.85rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px; }
   code { font-size: 0.78rem; background: var(--surface-3); padding: 1px 4px; border-radius: 4px; }
 </style>
