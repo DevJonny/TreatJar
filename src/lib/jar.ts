@@ -10,7 +10,7 @@
  * "£6.50 / £10.00". There is deliberately no second code path for money.
  */
 
-import { theme, tokenType } from './themes.ts';
+import { theme, tokenType, tokenTypeAnywhere } from './themes.ts';
 import type { Jar, Round, Token, RemovalKind, ThemeId } from './types.ts';
 
 export const nowIso = (): string => new Date().toISOString();
@@ -31,16 +31,40 @@ export function liveTokens(tokens: readonly Token[], roundId: string): Token[] {
 }
 
 /**
+ * The round's live tokens that the jar's *current* theme can still resolve.
+ *
+ * Changing a jar's theme orphans every token minted under the old one: the id
+ * survives, the type definition does not. Such a token has no value, no
+ * silhouette and no label, so `progress` cannot count it and the pile cannot
+ * draw it — and therefore nothing else may pretend it is in the jar either.
+ *
+ * That last part is the trap. `liveTokens` is the right list for anything
+ * asking "what has been added to this round"; it is the *wrong* list for
+ * anything the grown-up is shown, because the canvas silently drops what it
+ * cannot draw and would leave the text story claiming thirty treats sit in a
+ * jar that renders empty. Accessibility is a hard rule here: the two must not
+ * be able to disagree, so they are derived from the same function.
+ */
+export function visibleTokens(jar: Jar, tokens: readonly Token[]): Token[] {
+  return liveTokens(tokens, jar.currentRoundId).filter(
+    (t) => tokenType(jar.themeId, t.tokenTypeId) !== null,
+  );
+}
+
+/**
  * Summed value of the round's live tokens.
  *
  * A token whose type has since vanished from the theme contributes 0 rather
  * than throwing — a jar must never fail to render because a theme was edited.
+ * That is what makes `visibleTokens` the exact set this sums over, which is
+ * why it is written that way rather than with a `?? 0` of its own: the two
+ * cannot drift into disagreeing about which tokens count.
  */
 export function progress(jar: Jar, tokens: readonly Token[]): number {
-  return liveTokens(tokens, jar.currentRoundId).reduce((sum, t) => {
-    const def = tokenType(jar.themeId, t.tokenTypeId);
-    return sum + (def?.value ?? 0);
-  }, 0);
+  return visibleTokens(jar, tokens).reduce(
+    (sum, t) => sum + (tokenType(jar.themeId, t.tokenTypeId)?.value ?? 0),
+    0,
+  );
 }
 
 export function isComplete(jar: Jar, tokens: readonly Token[]): boolean {
@@ -287,11 +311,18 @@ export function restoreToken(token: Token): Token {
   return { ...rest, lastModified: nowIso() };
 }
 
-/** The most recently added live token, or null — what "undo" acts on. */
+/**
+ * The most recently added *visible* token, or null — what "undo" acts on.
+ *
+ * Visible rather than merely live, because undo is a button a grown-up presses
+ * expecting to watch something leave the jar. Handed an orphan from a previous
+ * theme it would consume the press, tombstone a token nobody can see, and
+ * change nothing on screen.
+ */
 export function lastAddedToken(jar: Jar, tokens: readonly Token[]): Token | null {
-  const live = liveTokens(tokens, jar.currentRoundId);
-  if (live.length === 0) return null;
-  return live.reduce((newest, t) => (t.addedUtc > newest.addedUtc ? t : newest));
+  const visible = visibleTokens(jar, tokens);
+  if (visible.length === 0) return null;
+  return visible.reduce((newest, t) => (t.addedUtc > newest.addedUtc ? t : newest));
 }
 
 export interface RoundClosure {
@@ -382,8 +413,10 @@ export function history(jar: Jar, tokens: readonly Token[], rounds: readonly Rou
 
   for (const t of tokens) {
     if (t.isDeleted || t.jarId !== jar.id) continue;
-    const def = tokenType(jar.themeId, t.tokenTypeId);
-    const label = def?.label ?? t.tokenTypeId;
+    // Resolved across every theme, not just this jar's. A token minted before
+    // a theme change is unresolvable here for ever, and the history is a record
+    // of what happened — the add is real, so it gets its real name.
+    const label = tokenTypeAnywhere(t.tokenTypeId)?.label ?? t.tokenTypeId;
     const index = roundIndex.get(t.roundId) ?? 0;
 
     entries.push({

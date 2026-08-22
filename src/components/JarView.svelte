@@ -6,8 +6,8 @@
   import RemoveSheet from './RemoveSheet.svelte';
   import { theme, tokenType } from '../lib/themes.ts';
   import {
-    formatProgress, formatTarget, history, isComplete, liveTokens,
-    progressFraction, projectedTokenCount,
+    formatProgress, formatTarget, history, isComplete,
+    progressFraction, projectedTokenCount, visibleTokens,
   } from '../lib/jar.ts';
   import type { Jar, Round, Token } from '../lib/types.ts';
 
@@ -38,7 +38,14 @@
   let lastAction = $state('');
 
   const def = $derived(theme(jar.themeId));
-  const live = $derived(liveTokens(tokens, jar.currentRoundId));
+  /**
+   * Deliberately NOT `liveTokens`. A token orphaned by a theme change counts
+   * for nothing and draws as nothing, so listing it here would tell a screen
+   * reader the jar holds thirty things called `trex` while the canvas shows an
+   * empty jar — and would leave "Take one out" offering tokens that are not
+   * in it. Everything the grown-up sees comes off this one list.
+   */
+  const live = $derived(visibleTokens(jar, tokens));
   const pile = $derived(live.map((t) => ({ id: t.id, tokenTypeId: t.tokenTypeId, seed: t.seed })));
   const capacity = $derived(projectedTokenCount(jar.themeId, jar.target));
   const complete = $derived(isComplete(jar, tokens));
