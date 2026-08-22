@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   addToken, closeRound, createJar, formatProgress, formatTarget, history, isComplete,
   lastAddedToken, liveTokens, progress, progressFraction, projectedTokenCount, pruneRounds,
-  removeToken, restoreToken, retargetForTheme, validateTarget, TOKEN_COUNT_MAX,
+  removeToken, restoreToken, retargetForTheme, validateTarget, visibleTokens, TOKEN_COUNT_MAX,
 } from '../src/lib/jar.ts';
+import { theme } from '../src/lib/themes.ts';
 import type { Round, Token } from '../src/lib/types.ts';
 
 const dinoJar = () => createJar({
@@ -106,6 +107,66 @@ describe('removal is a tombstone, not a splice', () => {
     expect(lastAddedToken(jar, [a, b])?.tokenTypeId).toBe('stego');
     expect(lastAddedToken(jar, [a, removeToken(b, 'undo')])?.tokenTypeId).toBe('trex');
     expect(lastAddedToken(jar, [])).toBeNull();
+  });
+});
+
+describe('tokens orphaned by a theme change', () => {
+  // A jar re-themed after tokens were added keeps every token exactly as it was
+  // minted, so its `tokenTypeId` no longer names anything. The point of these
+  // tests is that every consumer agrees such a token is not in the jar — the
+  // divergence they guard against was invisible on screen and audible only to
+  // a screen reader.
+  const reThemed = () => {
+    const { jar } = dinoJar();
+    const tokens = addMany(jar, ['trex', 'stego', 'raptor']);
+    return { jar: { ...jar, themeId: 'money' as const, target: 100 }, tokens };
+  };
+
+  it('leaves them live, because they were genuinely added', () => {
+    const { jar, tokens } = reThemed();
+    expect(liveTokens(tokens, jar.currentRoundId)).toHaveLength(3);
+  });
+
+  it('excludes them from the tokens the jar shows', () => {
+    const { jar, tokens } = reThemed();
+    expect(visibleTokens(jar, tokens)).toHaveLength(0);
+  });
+
+  it('agrees with progress, which is what stops the UI contradicting itself', () => {
+    const { jar, tokens } = reThemed();
+    expect(progress(jar, tokens)).toBe(0);
+    expect(visibleTokens(jar, tokens)).toHaveLength(0);
+  });
+
+  it('gives undo nothing to act on rather than a token nobody can see', () => {
+    const { jar, tokens } = reThemed();
+    expect(lastAddedToken(jar, tokens)).toBeNull();
+  });
+
+  it('keeps them in the history under their real names', () => {
+    const { jar, tokens } = reThemed();
+    const round: Round = { id: jar.currentRoundId, jarId: jar.id, index: 1,
+      startedUtc: '2026-01-01T00:00:00.000Z', completedUtc: null, lastModified: '2026-01-01T00:00:00.000Z' };
+    const log = history(jar, tokens, [round]);
+
+    // The adds genuinely happened, so they stay — and they are labelled from
+    // the theme that minted them, not left as the raw id the money jar cannot
+    // resolve. A child reading her own history should not see "trex".
+    expect(log).toHaveLength(3);
+    expect(log.map((e) => e.tokenLabel)).not.toContain('trex');
+    expect(log.map((e) => e.tokenLabel)).toContain(theme('dinosaurs').tokens[0]!.label);
+  });
+
+  it('shows only the resolvable ones when a jar holds both', () => {
+    const { jar } = moneyJar();
+    const orphan = { ...addToken({ jar, tokenTypeId: 'trex' }), addedUtc: '2026-01-01T12:00:00.000Z' };
+    const real = { ...addToken({ jar, tokenTypeId: 'coin-50' }), addedUtc: '2026-01-01T10:00:00.000Z' };
+    const tokens = [orphan, real];
+
+    expect(visibleTokens(jar, tokens)).toEqual([real]);
+    expect(progress(jar, tokens)).toBe(50);
+    // The orphan is the newer of the two; undo must still reach past it.
+    expect(lastAddedToken(jar, tokens)?.tokenTypeId).toBe('coin-50');
   });
 });
 
