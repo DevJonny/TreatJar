@@ -45,8 +45,8 @@
    * empty jar — and would leave "Take one out" offering tokens that are not
    * in it. Everything the grown-up sees comes off this one list.
    */
-  const live = $derived(visibleTokens(jar, tokens));
-  const pile = $derived(live.map((t) => ({ id: t.id, tokenTypeId: t.tokenTypeId, seed: t.seed })));
+  const visible = $derived(visibleTokens(jar, tokens));
+  const pile = $derived(visible.map((t) => ({ id: t.id, tokenTypeId: t.tokenTypeId, seed: t.seed })));
   const capacity = $derived(projectedTokenCount(jar.themeId, jar.target));
   const complete = $derived(isComplete(jar, tokens));
   const label = $derived(`${jar.name}'s ${def.label.toLowerCase()} jar, ${formatProgress(jar, tokens)} of ${formatTarget(jar)}`);
@@ -88,16 +88,16 @@
        here as real text. Nothing is reachable only by looking at the jar. -->
   <p class="visually-hidden" aria-live="polite">{announcement}</p>
   <ul class="visually-hidden">
-    {#each live as t (t.id)}
+    {#each visible as t (t.id)}
       <li>{tokenType(jar.themeId, t.tokenTypeId)?.label ?? t.tokenTypeId}</li>
     {/each}
   </ul>
 
   <div class="controls">
     <button class="primary" style:background={def.palette.accent} onclick={() => (addOpen = true)}>+ Add a treat</button>
-    <button onclick={() => (removeOpen = true)} disabled={live.length === 0}>Take one out</button>
-    <button onclick={onundo} disabled={live.length === 0}>Undo</button>
-    <button onclick={() => canvasRef?.shake()} disabled={live.length === 0}>Shake</button>
+    <button onclick={() => (removeOpen = true)} disabled={visible.length === 0}>Take one out</button>
+    <button onclick={onundo} disabled={visible.length === 0}>Undo</button>
+    <button onclick={() => canvasRef?.shake()} disabled={visible.length === 0}>Shake</button>
   </div>
 
   <details>
