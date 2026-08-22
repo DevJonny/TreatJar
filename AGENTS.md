@@ -86,6 +86,15 @@ box for exactly this reason; keep those bounds tight.
 Consequently `computeTokenSize()` must run **before** `buildWalls()`, since the
 lid's height derives from token size.
 
+A token enters the world one of two ways, and they are not interchangeable.
+The **scatter** (`SCATTER`) is for tokens restored from storage: spread across
+the full width and over a tall band so that one headless settle produces a pile
+rather than a tower. The **drop** (`DROP_*`) is for a token a grown-up just
+added: released over the mouth, barely tilted, from rest. `DROP_HEIGHT` is
+deliberately just above the rim — everything above the glass is clipped, so
+spawning higher does not lengthen the fall, it only means the token is already
+moving fast by the time anyone can see it.
+
 **6. The render loop stops when every body is asleep, and must keep doing so.**
 `enableSleeping` is on and the rAF loop exits at `isAtRest()`. A settled jar
 costs zero frames. Remove that and the app burns battery forever while showing

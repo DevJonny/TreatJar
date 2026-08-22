@@ -74,6 +74,22 @@ const SETTLE_STEPS = 220;
  * produces a pile instead of a tower.
  */
 const SCATTER = 6;
+/**
+ * A token added by hand is *dropped in through the mouth*, and the three
+ * constants below are what make it read that way rather than as a token
+ * blinking into existence somewhere along the rim.
+ *
+ * `DROP_HEIGHT` is deliberately small. It is tempting to spawn a new token far
+ * above the jar to make the fall longer, but everything above the glass is
+ * clipped, so a high spawn only means the token is already moving fast by the
+ * time it enters view. Released just out of sight and starting from rest, it
+ * enters slowly and accelerates — which is what a drop looks like.
+ */
+const DROP_HEIGHT = 0.95;
+/** Sideways jitter at release, as a fraction of the jar's width. */
+const DROP_SPREAD = 0.28;
+/** Radians of tilt at release. A drop wobbles; it does not cartwheel. */
+const DROP_TILT = 0.5;
 
 export class JarWorld {
   private engine: Matter.Engine;
@@ -154,7 +170,12 @@ export class JarWorld {
     return this.tokenSize * (1 + SCATTER) + this.tokenSize * 3 + WALL / 2;
   }
 
-  private makeBody(token: PileToken, spawnAbove: boolean): Matter.Body | null {
+  /**
+   * @param drop true for a token the grown-up just added, which falls in
+   * through the mouth; false for the first-load scatter, which is spread wide
+   * and tall so that one headless settle produces a pile, not a tower.
+   */
+  private makeBody(token: PileToken, drop: boolean): Matter.Body | null {
     const prep = this.prepared.get(token.tokenTypeId);
     if (!prep) return null;
 
@@ -163,9 +184,12 @@ export class JarWorld {
     const verts = prep.hull.map((v) => ({ x: v.x * s, y: v.y * s }));
 
     const margin = this.tokenSize * 0.7;
-    const x = margin + rng() * Math.max(1, this.opts.width - margin * 2);
-    const y = spawnAbove
-      ? -this.tokenSize * (1 + rng() * 0.5)
+    const usable = Math.max(1, this.opts.width - margin * 2);
+    const x = drop
+      ? this.opts.width / 2 + (rng() - 0.5) * usable * DROP_SPREAD
+      : margin + rng() * usable;
+    const y = drop
+      ? -this.tokenSize * (DROP_HEIGHT + rng() * 0.3)
       : -this.tokenSize * (1 + rng() * SCATTER);
 
     const body = Bodies.fromVertices(x, y, [verts as unknown as Matter.Vector[]], {
@@ -175,8 +199,11 @@ export class JarWorld {
       density: 0.0016,
       sleepThreshold: 40,
     });
-    Body.setAngle(body, (rng() - 0.5) * Math.PI);
-    Body.setAngularVelocity(body, (rng() - 0.5) * 0.25);
+    // A dropped token is released almost upright and turns lazily as it falls;
+    // a scattered one may be at any angle, because it is standing in for a
+    // token that was dropped in some earlier session and has long since settled.
+    Body.setAngle(body, (rng() - 0.5) * (drop ? DROP_TILT : Math.PI));
+    Body.setAngularVelocity(body, (rng() - 0.5) * (drop ? 0.06 : 0.25));
     this.bodyTypes.set(body, prep);
     return body;
   }
