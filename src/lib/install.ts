@@ -18,6 +18,15 @@ export type InstallOffer =
   | 'prompt'
   /** iOS: no API exists, so the steps have to be written out. */
   | 'manual'
+  /**
+   * The prompt was offered and is now spent — dismissed, or it failed.
+   *
+   * The browser gives the event once and will not give it again this visit, so
+   * the button cannot come back. What must NOT happen is the section vanishing:
+   * someone who taps Install, changes their mind, then changes it back would
+   * find the option gone and nothing to explain where it went.
+   */
+  | 'spent'
   /** Nothing useful to say — do not render a dead section. */
   | 'none';
 
@@ -51,9 +60,12 @@ export function installOffer(platform: {
   standalone: boolean;
   canPrompt: boolean;
   ios: boolean;
+  /** True once the browser has offered a prompt, even if it has been used up. */
+  everOffered?: boolean;
 }): InstallOffer {
   if (platform.standalone) return 'installed';
   if (platform.canPrompt) return 'prompt';
   if (platform.ios) return 'manual';
+  if (platform.everOffered) return 'spent';
   return 'none';
 }

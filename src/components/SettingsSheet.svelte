@@ -53,6 +53,12 @@
     </div>
   </fieldset>
 
+  <!-- Mounted unconditionally, and deliberately OUTSIDE the section below. A
+       live region only announces changes that happen while it is on the page,
+       so putting it inside a block that disappears at the same moment the
+       message is written announces nothing at all. -->
+  <p class="visually-hidden" aria-live="polite">{install.said}</p>
+
   <!-- Nothing is rendered when there is nothing to offer, rather than a section
        explaining that installing is unavailable. -->
   {#if install.offer !== 'none'}
@@ -63,6 +69,13 @@
       {:else if install.offer === 'prompt'}
         <p class="hint">Keep Treat Jar on your home screen — it opens full screen and works without a signal.</p>
         <button class="install" onclick={() => install.prompt()}>Install Treat Jar</button>
+      {:else if install.offer === 'spent'}
+        <!-- The browser hands the prompt over once. It cannot be asked again
+             this visit, so say where it went rather than vanishing. -->
+        <p class="hint">
+          You can still add Treat Jar to your home screen from your browser's menu — look for
+          <strong>Install</strong> or <strong>Add to Home screen</strong>.
+        </p>
       {:else}
         <!-- iOS has no install API at all, so the steps are the feature. -->
         <p class="hint">To keep Treat Jar on your home screen:</p>
@@ -72,8 +85,6 @@
           <li>Tap <strong>Add</strong>.</li>
         </ol>
       {/if}
-      <!-- The button disappearing is not an announcement. -->
-      <p class="visually-hidden" aria-live="polite">{install.said}</p>
     </fieldset>
   {/if}
 
