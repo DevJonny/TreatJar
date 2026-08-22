@@ -309,6 +309,70 @@ describe('changing a jar\'s theme with treats still in it', () => {
     });
   });
 
+  describe('a jar that was already holding orphans', () => {
+    // Only reachable from data saved before any of this existed, but that data
+    // is on real phones: a theme was changed, the tokens were left behind, and
+    // now the theme is being changed again.
+    const withOrphans = () => {
+      const { jar, round } = dinoJar();
+      const real = addMany(jar, ['trex', 'stego']);
+      const orphans = [
+        { ...addToken({ jar, tokenTypeId: 'coin-50' }), id: 'o1' },
+        { ...addToken({ jar, tokenTypeId: 'gummy' }), id: 'o2' },
+      ];
+      return { jar, round, tokens: [...real, ...orphans], real, orphans };
+    };
+
+    it('counts only what the grown-up can see when offering the choice', () => {
+      const { jar, tokens } = withOrphans();
+      // The form's "already has N treats" comes off this. Four would be a lie
+      // told about a jar the canvas draws with two in it.
+      expect(visibleTokens(jar, tokens)).toHaveLength(2);
+    });
+
+    it('converts the visible ones and leaves the orphans exactly as they were', () => {
+      const { jar, tokens, orphans } = withOrphans();
+      const after = convertTokens(jar, tokens, defaultTokenMapping('dinosaurs', 'money'));
+      for (const o of orphans) {
+        const found = after.find((t) => t.id === o.id)!;
+        expect(found).toEqual(o);
+        expect(found.mintedAs).toBeUndefined();
+      }
+    });
+
+    it('predicts exactly what the jar will read', () => {
+      const { jar, tokens } = withOrphans();
+      const mapping = defaultTokenMapping('dinosaurs', 'money');
+      const moneyJar = { ...jar, themeId: 'money' as const, target: 1000 };
+      expect(projectedProgress(jar, tokens, 'money', mapping))
+        .toBe(progress(moneyJar, convertTokens(jar, tokens, mapping)));
+    });
+
+    it('counts an orphan that the new theme brings back to life', () => {
+      // The stranded token here is a 50p in a dinosaur jar. Switching to money
+      // does not convert it — nothing maps it — but it resolves again all the
+      // same, and starts counting. Two converted treats at 50p plus the coin
+      // coming home is £1.50, not the £1.00 the visible tokens alone suggest.
+      const { jar, tokens } = withOrphans();
+      const moneyJar = { ...jar, themeId: 'money' as const, target: 1000 };
+      const projected = projectedProgress(jar, tokens, 'money', defaultTokenMapping('dinosaurs', 'money'));
+
+      expect(projected).toBe(150);
+      expect(progress(moneyJar, convertTokens(jar, tokens, defaultTokenMapping('dinosaurs', 'money')))).toBe(150);
+      // The sweet is still stranded — money has no use for it.
+      expect(visibleTokens(moneyJar, convertTokens(jar, tokens, defaultTokenMapping('dinosaurs', 'money')))).toHaveLength(3);
+    });
+
+    it('empties the whole round on reset, orphans included', () => {
+      const { jar, tokens } = withOrphans();
+      const after = clearTokensForThemeChange(jar, tokens);
+      // Otherwise the jar reads zero while still holding two treats that would
+      // reappear the moment anyone switched back to the theme that minted them.
+      expect(liveTokens(after, jar.currentRoundId)).toHaveLength(0);
+      for (const t of after) expect(t.removal?.kind).toBe('themeChange');
+    });
+  });
+
   describe('what the history remembers', () => {
     const round = (jar: { currentRoundId: string; id: string }): Round => ({
       id: jar.currentRoundId, jarId: jar.id, index: 1,
