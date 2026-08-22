@@ -16,7 +16,7 @@
  * tumbling pile, where fine detail is invisible and only the outline reads.
  */
 
-import type { ThemeDef, ThemeId, TokenTypeDef } from './types.ts';
+import { THEME_IDS, type ThemeDef, type ThemeId, type TokenTypeDef } from './types.ts';
 
 const countFormat = (n: number): string => `${n} ${n === 1 ? 'token' : 'tokens'}`;
 const gbpFormat = (pence: number): string => `£${(pence / 100).toFixed(2)}`;
@@ -307,6 +307,27 @@ export const theme = (id: ThemeId): ThemeDef => THEMES[id];
 
 export function tokenType(themeId: ThemeId, tokenTypeId: string): TokenTypeDef | null {
   return THEMES[themeId].tokens.find((t) => t.id === tokenTypeId) ?? null;
+}
+
+/**
+ * Find a token type by id in *any* theme.
+ *
+ * Only the history needs this. A token keeps the type id it was minted with
+ * for ever, so once a jar changes theme its past entries name types the
+ * current theme cannot resolve — and "trex added" is a worse thing to show a
+ * child than "T-rex added" when the event genuinely happened. Everywhere that
+ * asks what is in the jar *now* must keep using `tokenType`, which is scoped
+ * to the jar's theme on purpose.
+ *
+ * Safe because token ids are unique across all themes; `tests/themes.test.ts`
+ * holds that true, since a collision would silently mislabel history here.
+ */
+export function tokenTypeAnywhere(tokenTypeId: string): TokenTypeDef | null {
+  for (const id of THEME_IDS) {
+    const found = THEMES[id].tokens.find((t) => t.id === tokenTypeId);
+    if (found) return found;
+  }
+  return null;
 }
 
 /** Index within the theme's token tuple — the compact form used by share links. */

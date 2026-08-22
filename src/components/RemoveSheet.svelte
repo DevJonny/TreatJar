@@ -2,7 +2,7 @@
   import Sheet from './Sheet.svelte';
   import TokenGlyph from './TokenGlyph.svelte';
   import { tokenType } from '../lib/themes.ts';
-  import { liveTokens } from '../lib/jar.ts';
+  import { visibleTokens } from '../lib/jar.ts';
   import type { Jar, Token } from '../lib/types.ts';
 
   interface Props {
@@ -15,8 +15,12 @@
   let { open, jar, tokens, onclose, onremove }: Props = $props();
 
   let reasonText = $state('');
+  // `visibleTokens`, not `liveTokens`: a token orphaned by a theme change is
+  // not in the jar as far as the pile and the progress bar are concerned, so
+  // offering it here would let a grown-up "take out" something nobody can see,
+  // to no visible effect.
   const live = $derived(
-    liveTokens(tokens, jar.currentRoundId).slice().sort((a, b) => b.addedUtc.localeCompare(a.addedUtc)),
+    visibleTokens(jar, tokens).slice().sort((a, b) => b.addedUtc.localeCompare(a.addedUtc)),
   );
 
   function take(tokenId: string, kind: 'undo' | 'consequence') {

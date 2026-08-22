@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { THEMES, theme, tokenType, tokenTypeIndex } from '../src/lib/themes.ts';
+import { THEMES, theme, tokenType, tokenTypeAnywhere, tokenTypeIndex } from '../src/lib/themes.ts';
 import { THEME_IDS } from '../src/lib/types.ts';
 
 describe('every theme is well formed', () => {
@@ -7,6 +7,21 @@ describe('every theme is well formed', () => {
     const t = theme(id);
     expect(t.tokens).toHaveLength(4);
     expect(new Set(t.tokens.map((k) => k.id)).size).toBe(4);
+  });
+
+  it('gives every token in every theme a globally unique id', () => {
+    // `tokenTypeAnywhere` resolves a history label by id alone, with no theme
+    // to scope the search. A duplicate id across two themes would not fail
+    // anything loudly — it would just quietly label an old token with the
+    // wrong theme's name, in the one place a child reads her own past.
+    const all = THEME_IDS.flatMap((id) => theme(id).tokens.map((t) => t.id));
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('resolves a token type from any theme, and nothing from none', () => {
+    expect(tokenTypeAnywhere('trex')?.label).toBe(theme('dinosaurs').tokens[0]!.label);
+    expect(tokenTypeAnywhere('coin-50')?.label).toBe(tokenType('money', 'coin-50')!.label);
+    expect(tokenTypeAnywhere('nonesuch')).toBeNull();
   });
 
   it.each(THEME_IDS)('%s gives every token a drawable path and a hull', (id) => {
