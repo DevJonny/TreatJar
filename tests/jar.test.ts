@@ -321,6 +321,18 @@ describe('changing a jar\'s theme with treats still in it', () => {
       for (const e of removals) expect(e.removalKind).toBe('themeChange');
     });
 
+    it('normalises a blank reason away, as removeToken does', () => {
+      const { jar, tokens } = seeded();
+      // Otherwise the history shows an entry with an empty line under it,
+      // looking like text that failed to load.
+      for (const blank of ['', '   ', null]) {
+        const after = clearTokensForThemeChange(jar, tokens, blank);
+        for (const t of after) expect(t.removal?.reasonText).toBeNull();
+      }
+      const trimmed = clearTokensForThemeChange(jar, tokens, '  Changed to Money  ');
+      for (const t of trimmed) expect(t.removal?.reasonText).toBe('Changed to Money');
+    });
+
     it('keeps the adds in the history, because they happened', () => {
       const { jar, round, tokens } = seeded();
       const after = clearTokensForThemeChange(jar, tokens);
