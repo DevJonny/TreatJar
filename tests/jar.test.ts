@@ -309,6 +309,57 @@ describe('changing a jar\'s theme with treats still in it', () => {
     });
   });
 
+  describe('what the history remembers', () => {
+    const round = (jar: { currentRoundId: string; id: string }): Round => ({
+      id: jar.currentRoundId, jarId: jar.id, index: 1,
+      startedUtc: '2026-01-01T00:00:00.000Z', completedUtc: null,
+      lastModified: '2026-01-01T00:00:00.000Z',
+    });
+
+    it('names the treat the child was handed, not the one it became', () => {
+      const { jar, tokens } = seeded();
+      const mapping = Object.fromEntries(theme('dinosaurs').tokens.map((t) => [t.id, 'coin-50']));
+      const converted = convertTokens(jar, tokens, mapping);
+      const moneyJar = { ...jar, themeId: 'money' as const, target: 1000 };
+
+      // The jar is money now and counts money...
+      expect(progress(moneyJar, converted)).toBe(200);
+      // ...but she earned a T-Rex on the day she earned it.
+      const labels = history(moneyJar, converted, [round(jar)]).map((e) => e.tokenLabel);
+      expect(labels).toContain(theme('dinosaurs').tokens[0]!.label);
+      expect(labels).not.toContain('50p');
+    });
+
+    it('remembers the original through a second conversion', () => {
+      const { jar, tokens } = seeded();
+      const toMoney = convertTokens(jar, tokens, defaultTokenMapping('dinosaurs', 'money'));
+      const moneyJar = { ...jar, themeId: 'money' as const, target: 1000 };
+      const toSweets = convertTokens(moneyJar, toMoney, defaultTokenMapping('money', 'sweets'));
+
+      // Not the coin it passed through on the way.
+      for (const t of toSweets) expect(t.mintedAs).not.toBe('coin-50');
+      expect(toSweets.map((t) => t.mintedAs)).toEqual(tokens.map((t) => t.tokenTypeId));
+    });
+
+    it('leaves an unconverted token untouched, so nothing churns', () => {
+      const { jar, tokens } = seeded();
+      for (const t of tokens) expect(t.mintedAs).toBeUndefined();
+      // A mapping that changes nothing must not stamp a field on anything.
+      const identity = Object.fromEntries(theme('dinosaurs').tokens.map((t) => [t.id, t.id]));
+      expect(convertTokens(jar, tokens, identity)).toEqual(tokens);
+    });
+
+    it('still counts and draws the token as what it now is', () => {
+      const { jar, tokens } = seeded();
+      const converted = convertTokens(jar, tokens, defaultTokenMapping('dinosaurs', 'money'));
+      const moneyJar = { ...jar, themeId: 'money' as const, target: 1000 };
+      // mintedAs is a memory, not a second identity: nothing but the history
+      // may read it, or the jar would count treats it cannot draw.
+      for (const t of converted) expect(tokenType('money', t.tokenTypeId)).not.toBeNull();
+      expect(visibleTokens(moneyJar, converted)).toHaveLength(4);
+    });
+  });
+
   describe('resetting instead', () => {
     it('empties the jar without deleting a thing', () => {
       const { jar, tokens } = seeded();

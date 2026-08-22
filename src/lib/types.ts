@@ -129,6 +129,20 @@ export interface Token extends SyncMeta {
   /** Drives the drop offset and spin, so a pile is reproducible across loads. */
   seed: number;
   /**
+   * The type this token was FIRST added as, set only once a jar has been
+   * converted to another theme.
+   *
+   * Converting rewrites `tokenTypeId`, because the jar's contents genuinely
+   * are coins now — the pile draws them, progress counts them. But the child
+   * was handed a T-Rex on the tenth of August, and the history is a record of
+   * what happened, not of what the jar currently holds. Without this the past
+   * is quietly restated in a currency she never earned.
+   *
+   * Set on the first conversion and never overwritten, so a jar re-themed
+   * twice still remembers the dinosaur rather than the coin it briefly was.
+   */
+  mintedAs?: string;
+  /**
    * Present iff the token has been taken back out. The token is kept as a
    * tombstone rather than dropped so the history stays derivable from the
    * token list alone, and so the removal merges like any other edit.
