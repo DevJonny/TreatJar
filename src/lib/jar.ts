@@ -183,12 +183,12 @@ export function defaultTokenMapping(from: ThemeId, to: ThemeId): TokenMapping {
  *
  * One for one is the whole design, and it is what makes this safe to sync.
  * Rewriting `tokenTypeId` on a token that already exists is an ordinary edit
- * that merges by `lastModified` like any other (rule 2), so two devices
+ * that merges by `lastModified` like any other (rule 3), so two devices
  * converting the same jar converge on whichever conversion happened later.
  * Minting replacement tokens instead — which is what preserving the progress
  * FRACTION across a mode change would require — would give each device its own
  * fresh ids, and `mergeById` would keep both sets and double the child's
- * progress. Tombstoning is likewise avoided: rule 3 keeps history derivable
+ * progress. Tombstoning is likewise avoided: rule 4 keeps history derivable
  * from the token list, and a convert is not a removal.
  *
  * `seed` is deliberately preserved, so the pile settles into recognisably the

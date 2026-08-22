@@ -6,6 +6,8 @@ pile up. Fill the jar and it celebrates, empties, and starts again.
 - **Four themes** — dinosaurs, money, space and sweets, each with four token shapes.
 - **Real physics** — tokens tumble and settle into a proper pile. You can shake it.
 - **Two kinds of target** — count the tokens, or save up to a cash amount.
+- **Change your mind about the theme** — switch a jar that already has treats in
+  it and you decide what they are worth in the new one, or start the jar again.
 - **One-tap reasons** — "Tidied room" drops the right token in, or pick one by hand.
 - **Take one back** — as a mistake or as a consequence, with the reason kept in history.
 - **Share a snapshot** — a link anyone can open, no account needed.
