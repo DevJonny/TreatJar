@@ -208,7 +208,14 @@ export function convertTokens(
     if (!live.has(t.id)) return t;
     const next = mapping[t.tokenTypeId];
     if (next === undefined || next === t.tokenTypeId) return t;
-    return { ...t, tokenTypeId: next, lastModified: at };
+    return {
+      ...t,
+      tokenTypeId: next,
+      // `??`, never plain assignment: a jar converted twice must still name the
+      // type the child was actually handed, not the one it passed through.
+      mintedAs: t.mintedAs ?? t.tokenTypeId,
+      lastModified: at,
+    };
   });
 }
 
@@ -413,17 +420,22 @@ export function history(jar: Jar, tokens: readonly Token[], rounds: readonly Rou
 
   for (const t of tokens) {
     if (t.isDeleted || t.jarId !== jar.id) continue;
-    // Resolved across every theme, not just this jar's. A token minted before
-    // a theme change is unresolvable here for ever, and the history is a record
-    // of what happened — the add is real, so it gets its real name.
-    const label = tokenTypeAnywhere(t.tokenTypeId)?.label ?? t.tokenTypeId;
+    // The type the child was actually given, which is not always the type the
+    // token now is: converting a jar rewrites `tokenTypeId` so the pile and
+    // the bar can work in the new theme, and `mintedAs` is what stops that
+    // rewriting her past into a currency she never earned.
+    //
+    // Resolved across every theme, because by definition this jar's theme
+    // cannot name it. The add is real, so it gets its real name.
+    const mintedId = t.mintedAs ?? t.tokenTypeId;
+    const label = tokenTypeAnywhere(mintedId)?.label ?? mintedId;
     const index = roundIndex.get(t.roundId) ?? 0;
 
     entries.push({
       id: `${t.id}:add`,
       kind: 'added',
       at: t.addedUtc,
-      tokenTypeId: t.tokenTypeId,
+      tokenTypeId: mintedId,
       tokenLabel: label,
       reasonLabel: t.reasonId ? (reasonLabels.get(t.reasonId) ?? null) : null,
       note: t.note,
@@ -436,7 +448,7 @@ export function history(jar: Jar, tokens: readonly Token[], rounds: readonly Rou
         id: `${t.id}:remove`,
         kind: 'removed',
         at: t.removal.removedUtc,
-        tokenTypeId: t.tokenTypeId,
+        tokenTypeId: mintedId,
         tokenLabel: label,
         reasonLabel: t.removal.reasonText,
         note: null,

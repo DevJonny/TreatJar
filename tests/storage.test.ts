@@ -33,6 +33,21 @@ describe('a corrupt field costs one field, not the record', () => {
     expect(reviveJar('a string')).toBeNull();
   });
 
+  it('carries a converted token\'s original type through a reload', () => {
+    const t = reviveToken({ id: 't1', jarId: 'j', roundId: 'r', tokenTypeId: 'coin-50', mintedAs: 'trex', seed: 5 })!;
+    // Lose this and a converted jar's history silently restates itself in a
+    // currency the child never earned, one reload later.
+    expect(t.mintedAs).toBe('trex');
+  });
+
+  it('leaves the field off a token that was never converted', () => {
+    const t = reviveToken({ id: 't1', jarId: 'j', roundId: 'r', tokenTypeId: 'trex', seed: 5 })!;
+    expect('mintedAs' in t).toBe(false);
+    // A junk value is dropped rather than carried, same as every other field.
+    const junk = reviveToken({ id: 't2', jarId: 'j', roundId: 'r', tokenTypeId: 'trex', seed: 5, mintedAs: 42 })!;
+    expect('mintedAs' in junk).toBe(false);
+  });
+
   it('gives a seedless token a stable seed derived from its id', () => {
     const a = reviveToken({ id: 't1', jarId: 'j', roundId: 'r', tokenTypeId: 'trex' })!;
     const b = reviveToken({ id: 't1', jarId: 'j', roundId: 'r', tokenTypeId: 'trex' })!;
