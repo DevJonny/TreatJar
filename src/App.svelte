@@ -136,6 +136,13 @@
       jar={editing === 'existing' ? activeJar : null}
       tokens={store.tokens}
       oncancel={() => (editing = null)}
+      onremove={editing === 'existing' && activeJar ? () => {
+        if (confirm(`Are you sure you want to delete ${activeJar.name}?`)) {
+          store.deleteJar(activeJar.id);
+          editing = null;
+          go({ kind: 'list' });
+        }
+      } : undefined}
       onsave={(input) => {
         if (editing === 'existing' && activeJar) {
           const patch = {

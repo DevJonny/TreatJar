@@ -27,9 +27,10 @@
       name: string; themeId: ThemeId; target: number; reasons: Draft[];
       disposition: Disposition | null;
     }) => void;
+    onremove?: () => void;
     oncancel: () => void;
   }
-  let { jar = null, tokens = [], onsave, oncancel }: Props = $props();
+  let { jar = null, tokens = [], onsave, onremove, oncancel }: Props = $props();
 
   // Seeded once, on purpose. `untrack` says so explicitly: re-reading `jar`
   // reactively here would discard whatever the user has half-typed the moment
@@ -252,6 +253,9 @@
     <button type="submit" class="primary" disabled={!canSave} style:background={def.palette.accent}>
       {jar ? 'Save changes' : 'Create jar'}
     </button>
+    {#if onremove}
+      <button type="button" class="danger" onclick={onremove}>Delete jar</button>
+    {/if}
     <button type="button" onclick={oncancel}>Cancel</button>
   </div>
 </form>
@@ -289,4 +293,5 @@
   .actions button { min-height: var(--tap); border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); }
   .primary { color: #fff; border: none; font-weight: 650; }
   .primary:disabled { opacity: 0.45; }
+  .danger { color: var(--danger); border-color: currentColor; }
 </style>
